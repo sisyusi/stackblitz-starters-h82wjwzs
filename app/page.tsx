@@ -58,13 +58,27 @@ export default function Page() {
   const [feedPaused, setFeedPaused] = useState(false)
   const [feedPausedAt, setFeedPausedAt] = useState<Date | null>(null)
 
+  const [chokingFlash, setChokingFlash] = useState(false)
+  const [feedFlash, setFeedFlash] = useState(false)
+
   const [volume, setVolume] = useState(80)
   const [spitUp, setSpitUp] = useState(false)
   const [memo, setMemo] = useState('')
   const [message, setMessage] = useState('')
   const [endedFeed, setEndedFeed] = useState<FeedRecord | null>(null)
 
-  const rehabTypes = ['터미타임', '공 터미타임', '뒤집기 시도', '몸 중심선']
+  const [historyType, setHistoryType] = useState<'feed' | 'rehab'>('feed')
+
+  const rehabTypes = [
+    '터미타임',
+    '공터미타임',
+    '뒤집기시도',
+    '몸중심선',
+    '구강/안면 자극',
+    '옆 누워 놀기',
+    '시각추적 목 회전',
+    '가슴 살살 두드림',
+  ]
   const [activeRehab, setActiveRehab] = useState<RehabRecord | null>(null)
   const [rehabRecords, setRehabRecords] = useState<RehabRecord[]>([])
   const [rehabPaused, setRehabPaused] = useState(false)
@@ -76,7 +90,11 @@ export default function Page() {
     터미타임: 0,
     공터미타임: 0,
     뒤집기시도: 0,
-    몸중앙선: 0,
+    몸중심선: 0,
+    '구강/안면 자극': 0,
+    '옆 누워 놀기': 0,
+    '시각추적 목 회전': 0,
+    '가슴 살살 두드림': 0,
   })
 
   useEffect(() => {
@@ -198,10 +216,41 @@ export default function Page() {
   const formatDate = (dateString: string) =>
     new Date(dateString).toLocaleString('ko-KR')
 
+    const formatDateOnly = (dateString: string) =>
+    new Date(dateString).toLocaleDateString('ko-KR')
+  
+  const formatTimeOnly = (dateString: string) =>
+    new Date(dateString).toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+
+    const groupByDate = <T extends { start_time: string }>(items: T[]) => {
+      return items.reduce((groups, item) => {
+        const date = formatDateOnly(item.start_time)
+        if (!groups[date]) groups[date] = []
+        groups[date].push(item)
+        return groups
+      }, {} as Record<string, T[]>)
+    }
+
   const formatElapsed = (seconds: number | null | undefined) => {
     if (seconds === null || seconds === undefined) return '-'
     return `${Math.floor(seconds / 60)}분 ${seconds % 60}초`
   }
+  const formatElapsedHM = (seconds: number | null | undefined) => {
+    if (seconds === null || seconds === undefined) return '-'
+  
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+  
+    const hh = String(h).padStart(2, '0')
+    const mm = String(m).padStart(2, '0')
+  
+    return `${hh}:${mm}`
+  }
+
 
   const getFeedElapsed = (record: FeedRecord) => {
     const end =
@@ -218,6 +267,61 @@ export default function Page() {
     )
   }
 
+  const deleteFeedRecord = async (record: FeedRecord) => {
+    if (!confirm('이 수유 기록을 삭제할까요? 사레 기록도 함께 삭제됩니다.')) return
+  
+    await supabase.from('feed_events').delete().eq('record_id', record.id)
+  
+    const { error } = await supabase
+      .from('feed_records')
+      .delete()
+      .eq('id', record.id)
+  
+    if (error) return alert(error.message)
+  
+    await loadFeedRecords()
+    await loadFeedEvents()
+  }
+
+
+  const deleteRehabRecord = async (record: RehabRecord) => {
+    if (!confirm('이 재활 기록을 삭제할까요?')) return
+  
+    const { error } = await supabase
+      .from('rehab_records')
+      .delete()
+      .eq('id', record.id)
+  
+    if (error) return alert(error.message)
+  
+    await loadRehabRecords()
+  }
+
+
+  const getRehabColorClass = (type: string) => {
+    switch (type) {
+      case '터미타임':
+        return 'bg-orange-500 text-white'
+      case '공터미타임':
+        return 'bg-green-600 text-white'
+      case '뒤집기시도':
+        return 'bg-blue-600 text-white'
+      case '몸중심선':
+        return 'bg-purple-600 text-white'
+      case '구강/안면 자극':
+        return 'bg-pink-600 text-white'
+      case '옆 누워 놀기':
+        return 'bg-teal-600 text-white'
+      case '시각추적 목 회전':
+        return 'bg-indigo-600 text-white'
+      case '가슴 살살 두드림':
+        return 'bg-amber-600 text-white'
+      default:
+        return 'bg-slate-800 text-slate-200'
+    }
+  }
+
+  
   const getRehabElapsed = (record: RehabRecord) => {
     if (record.end_time) return record.duration_seconds
 
@@ -275,7 +379,7 @@ export default function Page() {
     const previous = chokingEvents[chokingEvents.length - 2]
   
     const result = [
-      `첫 사레(${formatChokingTime(first.event_time)}) 후 ${formatElapsed(first.elapsed_seconds)}`,
+      `수유 시작(${formatChokingTime(first.event_time)}) 첫 사레 ${formatElapsed(first.elapsed_seconds)}`,
     ]
   
     if (previous && last) {
@@ -283,7 +387,7 @@ export default function Page() {
         (last.elapsed_seconds ?? 0) - (previous.elapsed_seconds ?? 0)
   
       result.push(
-        `이전(${formatChokingTime(previous.event_time)}) 후 ${formatElapsed(interval)} 뒤 사레`
+        `이전 사레(${formatChokingTime(previous.event_time)}) 후 ${formatElapsed(interval)}`
       )
     }
   
@@ -364,7 +468,18 @@ export default function Page() {
     await loadFeedEvents()
   }
 
+  const vibrate = (pattern: number | number[] = 80) => {
+    if (typeof window !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate(pattern)
+    }
+  }
+
   const addChoking = async () => {
+    setChokingFlash(true)
+    setTimeout(() => setChokingFlash(false), 300)
+  
+    vibrate([80, 40, 80])
+
     if (!userId || !activeFeed) return
 
     const elapsed = getFeedElapsed(activeFeed)
@@ -655,6 +770,42 @@ export default function Page() {
   const todayChoking = todayFeedRecords.reduce((sum, r) => sum + r.choking_count, 0)
   const todayRehabSeconds = todayRehabRecords.reduce((sum, r) => sum + r.duration_seconds, 0)
 
+// 오늘 수유
+const todayFeeds = feedRecords.filter(
+  (r) =>
+    new Date(r.start_time).toDateString() === new Date().toDateString() &&
+    r.end_time
+)
+
+const todayFeedCount = todayFeeds.length
+
+// 직전 수유로부터 지난 시간
+const lastFeed = todayFeeds[0] // 최신순 정렬 가정
+const lastFeedGap = lastFeed
+  ? Math.floor((new Date().getTime() - new Date(lastFeed.start_time).getTime()) / 1000)
+  : null
+
+// 오늘 재활
+const todayRehabs = rehabRecords.filter(
+  (r) =>
+    new Date(r.start_time).toDateString() === new Date().toDateString() &&
+    r.end_time
+)
+
+// 재활 활동별 누적
+const todayRehabTotals = rehabTypes.reduce((acc, type) => {
+  acc[type] = todayRehabs
+    .filter((r) => r.exercise_type === type)
+    .reduce((sum, r) => sum + r.duration_seconds, 0)
+  return acc
+}, {} as Record<string, number>)
+
+// 직전 재활로부터 지난 시간
+const lastRehab = todayRehabs[0]
+const lastRehabGap = lastRehab
+  ? Math.floor((new Date().getTime() - new Date(lastRehab.start_time).getTime()) / 1000)
+  : null
+
   const combinedStats = useMemo(() => {
     const map = new Map<
       string,
@@ -693,6 +844,9 @@ export default function Page() {
 
     return Array.from(map.values())
   }, [feedRecords, rehabRecords])
+
+  const groupedFeedHistory = groupByDate(feedRecords)
+  const groupedRehabHistory = groupByDate(rehabRecords)
 
   const downloadCSV = () => {
     const header = ['구분', '시작', '종료', '시간', '수유량', '사레', '첫 사레', '재활종류', '메모']
@@ -793,15 +947,15 @@ export default function Page() {
               <div className="flex flex-col gap-4">
                 
               <button
-  onClick={startFeeding}
-  className="w-full rounded-3xl bg-orange-500 py-8 text-2xl font-bold shadow-lg active:scale-95"
->
-  수유 시작
-</button>
+                onClick={startFeeding}
+                className="w-full rounded-3xl bg-orange-500 py-10 text-5xl font-bold shadow-lg active:scale-95"
+              >
+                수유 시작
+              </button>
 
                 <button
                   onClick={() => setInputMode('rehab')}
-                  className="w-full rounded-3xl bg-green-600 py-8 text-2xl font-bold shadow-lg active:scale-95"
+                  className="w-full rounded-3xl bg-green-600 py-10 text-5xl font-bold shadow-lg active:scale-95"
                 >
                   재활 시작
                 </button>
@@ -809,6 +963,61 @@ export default function Page() {
               </div>
             </section>
           )}
+
+ {tab === 'record' && inputMode === 'none' && (
+                  <section className="rounded-3xl bg-slate-900 py-2 shadow-xl">
+                <h2 className="mb-2 text-lg font-bold text-center">오늘 통계</h2>
+
+
+  <div className="space-y-2">
+
+    {/* 수유 */}
+    <div className="rounded-2xl bg-slate-800 p-4">
+      <p className="mb-2 text-sm font-bold text-slate-300">수유</p>
+
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div>
+          <p className="text-xs font-bold">수유량</p>
+          <p className="text-lg font-bold">{todayVolume} ml</p>
+        </div>
+
+        <div>
+          <p className="text-xs font-bold">수유 횟수</p>
+          <p className="text-lg font-bold">{todayFeedCount}회</p>
+        </div>
+
+        <div>
+          <p className="text-xs font-bold">경과시간</p>
+          <p className="text-lg font-bold">
+            {formatElapsedHM(lastFeedGap)}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {/* 재활 */}
+    <div className="rounded-2xl bg-slate-800 p-4">
+      <p className="mb-2 text-sm font-bold text-slate-300">재활</p>
+
+      <div className="space-y-2">
+        {rehabTypes.map((type) => (
+          <div key={type} className="flex justify-between text-sm">
+            <span className="font-bold">{type}</span>
+            <span className="font-bold">
+              {formatElapsed(todayRehabTotals[type])}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 text-right text-xs font-bold">
+        마지막 재활 후 {formatElapsedHM(lastRehabGap)}
+      </div>
+    </div>
+
+  </div>
+</section>
+ )}
 
 {inputMode === 'feed' && (
   <section className="rounded-3xl bg-slate-900 p-5 shadow-xl">
@@ -818,27 +1027,35 @@ export default function Page() {
       <>
 <button
   onClick={handleFeedMainButton}
-  className={`w-full rounded-2xl py4 text-center ${
-    feedPaused ? 'bg-blue-600' : 'bg-green-600'
+  className={`w-full rounded-3xl p-3 text-center ${
+    feedPaused ? 'bg-slate-500' : 'bg-green-600'
   }`}
 >
-  <p className="text-sm opacity-90">수유 시작</p>
+  <p className="text-lg opacity-90">수유 시작</p>
 
-  <p className="mt-1 text-3xl font-extrabold">
+  <p className="mt-3 text-3xl font-extrabold">
     {formatElapsed(getFeedElapsed(activeFeed))}
   </p>
 
-  <p className="mt-1 text-sm">
+  <p className="mt-3 text-lg">
     {feedPaused ? '일시정지 중' : '시간 측정 중'}
   </p>
 </button>
 
-        <button
-          onClick={addChoking}
-          className="mt-4 w-full rounded-2xl bg-red-600 py-4 text-lg font-bold"
-        >
-          사레 발생 (총 {activeFeed.choking_count}회)
-        </button>
+<button
+  onClick={addChoking}
+  className={`mt-3 w-full rounded-3xl bg-red-600 py-10 text-center transition-all duration-300 ${
+    chokingFlash ? 'scale-105 ring-4 ring-yellow-300 bg-yellow-500 text-black' : ''
+  }`}
+>
+  <div className="text-3xl font-extrabold">
+    사레 발생
+  </div>
+
+  <div className="mt-3 text-3xl font-extrabold">
+    (총 {activeFeed.choking_count}회)
+  </div>
+</button>
       
       
         {/* 상태 메시지 + 사레 이력 */}
@@ -1054,65 +1271,133 @@ export default function Page() {
           </>
         )}
 
-        {tab === 'history' && (
-          <>
-            <section className="rounded-3xl bg-slate-900 p-4 shadow-xl">
-              <h2 className="mb-4 text-lg font-bold">수유 이력</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] text-left text-sm">
-                  <thead className="bg-slate-800 text-slate-300">
-                    <tr>
-                      <th className="p-3">시작</th>
-                      <th className="p-3">수유시간</th>
-                      <th className="p-3">수유량</th>
-                      <th className="p-3">사레</th>
-                      <th className="p-3">첫 사레</th>
-                      <th className="p-3">게우기</th>
-                      <th className="p-3">메모</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {feedRecords.map((r) => (
-                      <tr key={r.id} className="border-b border-slate-800">
-                        <td className="p-3">{formatDate(r.start_time)}</td>
-                        <td className="p-3">{formatElapsed(getFeedElapsed(r))}</td>
-                        <td className="p-3">{r.volume_ml} ml</td>
-                        <td className="p-3">{r.choking_count}회</td>
-                        <td className="p-3">{formatElapsed(getFirstChokingElapsed(r))}</td>
-                        <td className="p-3">{r.spit_up ? '예' : '아니오'}</td>
-                        <td className="p-3">{r.memo || '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+{tab === 'history' && (
+  <section className="rounded-3xl bg-slate-900 p-4 shadow-xl">
+    <h2 className="mb-4 text-lg font-bold">이력</h2>
 
-            <section className="rounded-3xl bg-slate-900 p-4 shadow-xl">
-              <h2 className="mb-4 text-lg font-bold">재활 이력</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left text-sm">
-                  <thead className="bg-slate-800 text-slate-300">
-                    <tr>
-                      <th className="p-3">시작</th>
-                      <th className="p-3">재활 종류</th>
-                      <th className="p-3">운동 시간</th>
+    <div className="mb-4 grid grid-cols-2 gap-2">
+      <button
+        onClick={() => setHistoryType('feed')}
+        className={`rounded-2xl py-3 font-bold ${
+          historyType === 'feed' ? 'bg-blue-600' : 'bg-slate-800'
+        }`}
+      >
+        수유 이력
+      </button>
+
+      <button
+        onClick={() => setHistoryType('rehab')}
+        className={`rounded-2xl py-3 font-bold ${
+          historyType === 'rehab' ? 'bg-green-600' : 'bg-slate-800'
+        }`}
+      >
+        재활 이력
+      </button>
+    </div>
+
+    {historyType === 'feed' && (
+      <div className="space-y-5">
+        {Object.entries(groupedFeedHistory).map(([date, items]) => (
+          <div key={date} className="rounded-2xl bg-slate-800 p-3">
+            <div className="mb-3 rounded-xl bg-slate-950 p-3 text-center font-bold">
+              {date}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead className="text-slate-400">
+                  <tr>
+                    <th className="p-2">시각</th>
+                    <th className="p-2">수유시간</th>
+                    <th className="p-2">수유량</th>
+                    <th className="p-2">사레</th>
+                    <th className="p-2">첫 사레</th>
+                    <th className="p-2">게우기</th>
+                    <th className="p-2">메모</th>
+                    <th className="p-2">관리</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {(items as FeedRecord[]).map((r) => (
+                    <tr key={r.id} className="border-t border-slate-700">
+                      <td className="p-2 font-bold">
+                        {formatTimeOnly(r.start_time)}
+                      </td>
+                      <td className="p-2">{formatElapsed(getFeedElapsed(r))}</td>
+                      <td className="p-2">{r.volume_ml} ml</td>
+                      <td className="p-2">{r.choking_count}회</td>
+                      <td className="p-2">
+                        {formatElapsed(getFirstChokingElapsed(r))}
+                      </td>
+                      <td className="p-2">{r.spit_up ? '예' : '아니오'}</td>
+                      <td className="p-2">{r.memo || '-'}</td>
+                      <td className="p-2">
+                        <button
+                          onClick={() => deleteFeedRecord(r)}
+                          className="text-red-400 font-bold"
+                        >
+                          삭제
+                        </button>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {rehabRecords.map((r) => (
-                      <tr key={r.id} className="border-b border-slate-800">
-                        <td className="p-3">{formatDate(r.start_time)}</td>
-                        <td className="p-3">{r.exercise_type}</td>
-                        <td className="p-3">{formatElapsed(r.duration_seconds)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </>
-        )}
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+
+    {historyType === 'rehab' && (
+      <div className="space-y-5">
+        {Object.entries(groupedRehabHistory).map(([date, items]) => (
+          <div key={date} className="rounded-2xl bg-slate-800 p-3">
+            <div className="mb-3 rounded-xl bg-slate-950 p-3 text-center font-bold">
+              {date}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] text-left text-sm">
+                <thead className="text-slate-400">
+                  <tr>
+                    <th className="p-2">시각</th>
+                    <th className="p-2">재활 종류</th>
+                    <th className="p-2">운동 시간</th>
+                    <th className="p-2">메모</th>
+                    <th className="p-2">관리</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {(items as RehabRecord[]).map((r) => (
+                    <tr key={r.id} className="border-t border-slate-700">
+                      <td className="p-2 font-bold">
+                        {formatTimeOnly(r.start_time)}
+                      </td>
+                      <td className="p-2">{r.exercise_type}</td>
+                      <td className="p-2">{formatElapsed(r.duration_seconds)}</td>
+                      <td className="p-2">{r.memo || '-'}</td>
+                      <td className="p-2">
+                        <button
+                          onClick={() => deleteRehabRecord(r)}
+                          className="text-red-400 font-bold"
+                        >
+                          삭제
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </section>
+)}
 
         {tab === 'stats' && (
           <section className="space-y-4">
