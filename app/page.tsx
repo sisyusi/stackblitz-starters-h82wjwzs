@@ -202,7 +202,17 @@ export default function Page() {
     if (seconds === null || seconds === undefined) return '-'
     return `${Math.floor(seconds / 60)}분 ${seconds % 60}초`
   }
-
+  const formatElapsedHM = (seconds: number | null | undefined) => {
+    if (seconds === null || seconds === undefined) return '-'
+  
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+  
+    const hh = String(h).padStart(2, '0')
+    const mm = String(m).padStart(2, '0')
+  
+    return `${hh}:${mm}`
+  }
   const getFeedElapsed = (record: FeedRecord) => {
     const end =
       record.end_time
@@ -655,6 +665,42 @@ export default function Page() {
   const todayChoking = todayFeedRecords.reduce((sum, r) => sum + r.choking_count, 0)
   const todayRehabSeconds = todayRehabRecords.reduce((sum, r) => sum + r.duration_seconds, 0)
 
+// 오늘 수유
+const todayFeeds = feedRecords.filter(
+  (r) =>
+    new Date(r.start_time).toDateString() === new Date().toDateString() &&
+    r.end_time
+)
+
+const todayFeedCount = todayFeeds.length
+
+// 직전 수유로부터 지난 시간
+const lastFeed = todayFeeds[0] // 최신순 정렬 가정
+const lastFeedGap = lastFeed
+  ? Math.floor((new Date().getTime() - new Date(lastFeed.start_time).getTime()) / 1000)
+  : null
+
+// 오늘 재활
+const todayRehabs = rehabRecords.filter(
+  (r) =>
+    new Date(r.start_time).toDateString() === new Date().toDateString() &&
+    r.end_time
+)
+
+// 재활 활동별 누적
+const todayRehabTotals = rehabTypes.reduce((acc, type) => {
+  acc[type] = todayRehabs
+    .filter((r) => r.exercise_type === type)
+    .reduce((sum, r) => sum + r.duration_seconds, 0)
+  return acc
+}, {} as Record<string, number>)
+
+// 직전 재활로부터 지난 시간
+const lastRehab = todayRehabs[0]
+const lastRehabGap = lastRehab
+  ? Math.floor((new Date().getTime() - new Date(lastRehab.start_time).getTime()) / 1000)
+  : null
+
   const combinedStats = useMemo(() => {
     const map = new Map<
       string,
@@ -793,11 +839,11 @@ export default function Page() {
               <div className="flex flex-col gap-4">
                 
               <button
-  onClick={startFeeding}
-  className="w-full rounded-3xl bg-orange-500 py-8 text-2xl font-bold shadow-lg active:scale-95"
->
-  수유 시작
-</button>
+                onClick={startFeeding}
+                className="w-full rounded-3xl bg-orange-500 py-8 text-2xl font-bold shadow-lg active:scale-95"
+              >
+                수유 시작
+              </button>
 
                 <button
                   onClick={() => setInputMode('rehab')}
@@ -809,6 +855,59 @@ export default function Page() {
               </div>
             </section>
           )}
+ {tab === 'record' && inputMode === 'none' && (
+                  <section className="rounded-3xl bg-slate-900 p-5 shadow-xl">
+  
+
+  <div className="space-y-4">
+
+    {/* 수유 */}
+    <div className="rounded-2xl bg-slate-800 p-4">
+      <p className="mb-2 text-sm font-bold text-slate-300">수유</p>
+
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div>
+          <p className="text-xs text-slate-400">수유량</p>
+          <p className="text-lg font-bold">{todayVolume} ml</p>
+        </div>
+
+        <div>
+          <p className="text-xs text-slate-400">횟수</p>
+          <p className="text-lg font-bold">{todayFeedCount}회</p>
+        </div>
+
+        <div>
+          <p className="text-xs text-slate-400">경과시간</p>
+          <p className="text-sm font-bold">
+            {formatElapsedHM(lastFeedGap)}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {/* 재활 */}
+    <div className="rounded-2xl bg-slate-800 p-4">
+      <p className="mb-2 text-sm font-bold text-slate-300">재활</p>
+
+      <div className="space-y-2">
+        {rehabTypes.map((type) => (
+          <div key={type} className="flex justify-between text-sm">
+            <span className="text-slate-300">{type}</span>
+            <span className="font-bold">
+              {formatElapsed(todayRehabTotals[type])}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 text-right text-xs text-slate-400">
+        마지막 재활 후 {formatElapsedHM(lastRehabGap)}
+      </div>
+    </div>
+
+  </div>
+</section>
+ )}
 
 {inputMode === 'feed' && (
   <section className="rounded-3xl bg-slate-900 p-5 shadow-xl">
@@ -818,7 +917,7 @@ export default function Page() {
       <>
 <button
   onClick={handleFeedMainButton}
-  className={`w-full rounded-2xl py4 text-center ${
+  className={`w-full rounded-3xl py6 text-center ${
     feedPaused ? 'bg-blue-600' : 'bg-green-600'
   }`}
 >
