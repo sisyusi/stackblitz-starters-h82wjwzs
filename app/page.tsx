@@ -79,6 +79,9 @@ export default function Page() {
     '시각추적 목 회전',
     '가슴 살살 두드림',
   ]
+
+
+
   const [activeRehab, setActiveRehab] = useState<RehabRecord | null>(null)
   const [rehabRecords, setRehabRecords] = useState<RehabRecord[]>([])
   const [rehabPaused, setRehabPaused] = useState(false)
@@ -88,14 +91,17 @@ export default function Page() {
   const [recentRehabLogs, setRecentRehabLogs] = useState<string[]>([])
   const [recentRehabTotals, setRecentRehabTotals] = useState<Record<string, number>>({
     터미타임: 0,
-    공터미타임: 0,
-    뒤집기시도: 0,
-    몸중심선: 0,
+    '공터미타임': 0,
+    '뒤집기시도': 0,
+    '몸중심선': 0,
     '구강/안면 자극': 0,
     '옆 누워 놀기': 0,
     '시각추적 목 회전': 0,
     '가슴 살살 두드림': 0,
   })
+
+
+
 
   useEffect(() => {
     checkUser()
@@ -251,6 +257,85 @@ export default function Page() {
     return `${hh}:${mm}`
   }
 
+  const getFeedDayStats = (records: FeedRecord[]) => {
+    const totalVolume = records.reduce((sum, r) => sum + r.volume_ml, 0)
+  
+    const totalChoking = records.reduce(
+      (sum, r) => sum + r.choking_count,
+      0
+    )
+  
+    const totalDuration = records.reduce(
+      (sum, r) => sum + getFeedElapsed(r),
+      0
+    )
+  
+    const averageDuration =
+      records.length > 0
+        ? Math.floor(totalDuration / records.length)
+        : 0
+  
+    const averageChoking =
+      records.length > 0
+        ? totalChoking / records.length
+        : 0
+  
+    // 평균 사레 간격
+    const intervals: number[] = []
+  
+    records.forEach((record) => {
+      const events = feedEvents
+        .filter(
+          (e) =>
+            e.record_id === record.id &&
+            e.event_type === 'choking'
+        )
+        .sort(
+          (a, b) =>
+            new Date(a.event_time).getTime() -
+            new Date(b.event_time).getTime()
+        )
+  
+      for (let i = 1; i < events.length; i++) {
+        intervals.push(
+          (events[i].elapsed_seconds ?? 0) -
+            (events[i - 1].elapsed_seconds ?? 0)
+        )
+      }
+    })
+  
+    const averageInterval =
+      intervals.length > 0
+        ? Math.floor(
+            intervals.reduce((a, b) => a + b, 0) /
+              intervals.length
+          )
+        : 0
+  
+    return {
+      count: records.length,
+      totalVolume,
+      averageDuration,
+      averageChoking,
+      averageInterval,
+    }
+  }
+
+  const getRehabDayStats = (records: RehabRecord[]) => {
+    const totals: Record<string, number> = {}
+  
+    rehabTypes.forEach((type) => {
+      totals[type] = 0
+    })
+  
+    records.forEach((r) => {
+      totals[r.exercise_type] =
+        (totals[r.exercise_type] || 0) +
+        r.duration_seconds
+    })
+  
+    return totals
+  }
 
   const getFeedElapsed = (record: FeedRecord) => {
     const end =
@@ -266,6 +351,36 @@ export default function Page() {
         (record.paused_seconds ?? 0)
     )
   }
+
+  const getLastChokingGap = () => {
+    if (!activeFeed) return null
+  
+    const chokingEvents = feedEvents
+      .filter(
+        (e) =>
+          e.record_id === activeFeed.id &&
+          e.event_type === 'choking'
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.event_time).getTime() -
+          new Date(b.event_time).getTime()
+      )
+  
+    if (chokingEvents.length === 0) return null
+  
+    const last = chokingEvents[chokingEvents.length - 1]
+  
+    // 현재 실제 수유 진행 시간
+    const currentElapsed = getFeedElapsed(activeFeed)
+  
+    // 마지막 사레 발생 시점
+    const lastElapsed = last.elapsed_seconds ?? 0
+  
+    // 직전 사레 이후 경과
+    return Math.max(currentElapsed - lastElapsed, 0)
+  }
+
 
   const deleteFeedRecord = async (record: FeedRecord) => {
     if (!confirm('이 수유 기록을 삭제할까요? 사레 기록도 함께 삭제됩니다.')) return
@@ -321,7 +436,15 @@ export default function Page() {
     }
   }
 
-  
+  const displayRehabName = (type: string) => {
+    if (type === '공터미타임') return '공 터미타임'    
+    if (type === '뒤집기시도') return '뒤집기 유도'
+    if (type === '뒤집기 시도') return '뒤집기 유도'
+    if (type === '몸중심선') return '몸 중심선'
+    if (type === '가슴 살살 두드림') return '등/가슴 두드림'
+    return type
+  }
+
   const getRehabElapsed = (record: RehabRecord) => {
     if (record.end_time) return record.duration_seconds
 
@@ -379,7 +502,7 @@ export default function Page() {
     const previous = chokingEvents[chokingEvents.length - 2]
   
     const result = [
-      `수유 시작(${formatChokingTime(first.event_time)}) 첫 사레 ${formatElapsed(first.elapsed_seconds)}`,
+      `수유(${formatChokingTime(activeFeed.start_time)}) 첫 사레 ${formatElapsed(first.elapsed_seconds)}`,
     ]
   
     if (previous && last) {
@@ -394,6 +517,7 @@ export default function Page() {
     return result
   }
 
+  const lastChokingGap = getLastChokingGap()
 
   const handleFeedMainButton = async () => {
     if (!activeFeed) {
@@ -770,6 +894,11 @@ export default function Page() {
   const todayChoking = todayFeedRecords.reduce((sum, r) => sum + r.choking_count, 0)
   const todayRehabSeconds = todayRehabRecords.reduce((sum, r) => sum + r.duration_seconds, 0)
 
+  const todayFeedCount = todayFeedRecords.length
+  const todayAverageChoking =
+    todayFeedCount > 0 ? todayChoking / todayFeedCount : 0
+
+
 // 오늘 수유
 const todayFeeds = feedRecords.filter(
   (r) =>
@@ -777,9 +906,7 @@ const todayFeeds = feedRecords.filter(
     r.end_time
 )
 
-const todayFeedCount = todayFeeds.length
 
-// 직전 수유로부터 지난 시간
 const lastFeed = todayFeeds[0] // 최신순 정렬 가정
 const lastFeedGap = lastFeed
   ? Math.floor((new Date().getTime() - new Date(lastFeed.start_time).getTime()) / 1000)
@@ -932,17 +1059,17 @@ const lastRehabGap = lastRehab
       <div className="mx-auto max-w-md space-y-4">
       {tab === 'record' && inputMode === 'none' && (
 
-        <section className="rounded-3xl bg-slate-900 p-5 shadow-xl">
-          <h1 className="text-2xl font-bold">가은 수유/재활 기록앱</h1>
-          <p className="mt-1 text-xs text-slate-400">로그인됨: {userEmail}</p>
+        <section className="rounded-3xl bg-slate-900 p-3 shadow-xl">
+          <h1 className="text-lg font-bold text-center">가은 수유/재활 기록앱</h1>
+          <p className="mt-1 text-xs text-slate-400 text-center">로그인됨: {userEmail}</p>
         </section>
       )}
       
         {tab === 'record' && (
           <>
                       {inputMode === 'none' && (
-            <section className="rounded-3xl bg-slate-900 p-5 shadow-xl">
-              <h2 className="mb-5 text-lg font-bold text-center">기록 선택</h2>
+            <section className="rounded-3xl bg-slate-900 p-1 shadow-xl">
+              <h2 className="mb-5 text-sm font-bold text-center">기록 선택</h2>
 
               <div className="flex flex-col gap-4">
                 
@@ -966,56 +1093,77 @@ const lastRehabGap = lastRehab
 
  {tab === 'record' && inputMode === 'none' && (
                   <section className="rounded-3xl bg-slate-900 py-2 shadow-xl">
-                <h2 className="mb-2 text-lg font-bold text-center">오늘 통계</h2>
+                <h2 className="mb-2 text-sm font-bold text-center">오늘 통계</h2>
 
 
   <div className="space-y-2">
 
     {/* 수유 */}
-    <div className="rounded-2xl bg-slate-800 p-4">
-      <p className="mb-2 text-sm font-bold text-slate-300">수유</p>
+    <div className="rounded-2xl bg-slate-800 p-3">
 
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div>
-          <p className="text-xs font-bold">수유량</p>
-          <p className="text-lg font-bold">{todayVolume} ml</p>
-        </div>
-
-        <div>
-          <p className="text-xs font-bold">수유 횟수</p>
-          <p className="text-lg font-bold">{todayFeedCount}회</p>
-        </div>
-
-        <div>
-          <p className="text-xs font-bold">경과시간</p>
-          <p className="text-lg font-bold">
-            {formatElapsedHM(lastFeedGap)}
-          </p>
-        </div>
-      </div>
+  <div className="grid grid-cols-2 gap-3 text-center">
+    <div>
+      <p className="text-xs text-slate-400">수유량</p>
+      <p className="text-lg font-bold">{todayVolume} ml</p>
     </div>
+
+    <div>
+      <p className="text-xs text-slate-400">수유 횟수</p>
+      <p className="text-lg font-bold">{todayFeedCount}회</p>
+    </div>
+
+    <div>
+      <p className="text-xs text-slate-400">평균 사레 횟수</p>
+      <p className="text-lg font-bold">
+        {todayAverageChoking.toFixed(1)}회
+      </p>
+    </div>
+
+    <div>
+      <p className="text-xs text-slate-400">직전 수유 후</p>
+      <p className="text-lg font-bold">
+        {formatElapsedHM(lastFeedGap)}
+      </p>
+    </div>
+  </div>
+</div>
 
     {/* 재활 */}
-    <div className="rounded-2xl bg-slate-800 p-4">
-      <p className="mb-2 text-sm font-bold text-slate-300">재활</p>
+    <div className="mb-3 flex items-center justify-between">
+  <p className="text-sm font-bold text-slate-300">재활</p>
 
-      <div className="space-y-2">
-        {rehabTypes.map((type) => (
-          <div key={type} className="flex justify-between text-sm">
-            <span className="font-bold">{type}</span>
-            <span className="font-bold">
-              {formatElapsed(todayRehabTotals[type])}
-            </span>
-          </div>
-        ))}
+  <div className="text-right">
+    <p className="text-xs text-slate-400">총 시간</p>
+    <p className="text-sm font-extrabold text-green-400">
+      {formatElapsed(todayRehabSeconds)}
+    </p>
+  </div>
+</div>
+
+<div className="space-y-2">
+  {rehabTypes.map((type) => {
+    const seconds = todayRehabTotals[type] ?? 0
+    const hasRecord = seconds > 0
+
+    return (
+      <div key={type} className="flex justify-between text-sm">
+        <span className={hasRecord ? 'font-extrabold text-green-400' : 'text-slate-500'}>
+        {displayRehabName(type)}
+        </span>
+
+        <span className={hasRecord ? 'font-extrabold text-green-400' : 'text-slate-500'}>
+          {formatElapsed(seconds)}
+        </span>
       </div>
-
-      <div className="mt-3 text-right text-xs font-bold">
+    )
+  })}
+</div>
+      <div className="mt-3 text-right text-sm font-extrabold">
         마지막 재활 후 {formatElapsedHM(lastRehabGap)}
       </div>
-    </div>
-
   </div>
+
+
 </section>
  )}
 
@@ -1031,7 +1179,20 @@ const lastRehabGap = lastRehab
     feedPaused ? 'bg-slate-500' : 'bg-green-600'
   }`}
 >
-  <p className="text-lg opacity-90">수유 시작</p>
+      <p className="text-sm opacity-90">
+        수유 시작
+        {activeFeed && (
+          <span className="ml-1">
+            (
+            {new Date(activeFeed.start_time).toLocaleTimeString('ko-KR', {
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            })}
+            )
+          </span>
+        )}
+      </p>
 
   <p className="mt-3 text-3xl font-extrabold">
     {formatElapsed(getFeedElapsed(activeFeed))}
@@ -1044,7 +1205,7 @@ const lastRehabGap = lastRehab
 
 <button
   onClick={addChoking}
-  className={`mt-3 w-full rounded-3xl bg-red-600 py-10 text-center transition-all duration-300 ${
+  className={`mt-3 w-full rounded-3xl bg-red-600 py-4 text-center transition-all duration-300 ${
     chokingFlash ? 'scale-105 ring-4 ring-yellow-300 bg-yellow-500 text-black' : ''
   }`}
 >
@@ -1052,9 +1213,21 @@ const lastRehabGap = lastRehab
     사레 발생
   </div>
 
-  <div className="mt-3 text-3xl font-extrabold">
+  <div className="mt-2 text-2xl font-extrabold">
     (총 {activeFeed.choking_count}회)
   </div>
+  
+  {lastChokingGap !== null && (
+  <div className="mt-2 rounded-2xl bg-red-700/40 p-2">
+    <p className="text-sm text-red-200">
+      직전 사레 후
+    </p>
+
+    <p className="mt-1 text-2xl font-extrabold text-white">
+      {formatElapsed(lastChokingGap)}
+    </p>
+  </div>
+)}
 </button>
       
       
@@ -1072,19 +1245,21 @@ const lastRehabGap = lastRehab
 )}
 </div>
     
-        <button
-          onClick={finishFeeding}
-          className="mt-4 w-full rounded-2xl bg-slate-100 py-4 text-lg font-bold text-slate-950"
-        >
-          수유 종료
-        </button>
+<div className="mt-4">
+  <button
+    onClick={finishFeeding}
+    className="w-full rounded-2xl bg-slate-100 py-4 font-bold text-slate-950"
+  >
+    수유 종료 및 저장
+  </button>
 
-        <button
-  onClick={cancelFeeding}
-  className="mt-3 w-full rounded-2xl bg-slate-700 py-4 text-lg font-bold text-slate-200"
->
-  수유 취소
-</button>
+  <button
+    onClick={cancelFeeding}
+    className="mt-9 w-full rounded-2xl border border-red-500 bg-transparent py-3 font-bold text-red-400"
+  >
+    수유 취소
+  </button>
+</div>
 
       </>
     )}
@@ -1299,22 +1474,38 @@ const lastRehabGap = lastRehab
       <div className="space-y-5">
         {Object.entries(groupedFeedHistory).map(([date, items]) => (
           <div key={date} className="rounded-2xl bg-slate-800 p-3">
-            <div className="mb-3 rounded-xl bg-slate-950 p-3 text-center font-bold">
-              {date}
+            
+              <div className="mb-2 rounded-xl bg-slate-950 px-3 py-2">
+              <div className="text-center text-sm font-bold text-slate-300">
+                {date}
+              </div>
+
+              {(() => {
+                const stats = getFeedDayStats(items as FeedRecord[])
+
+                return (
+                  <div className="mt-1 text-center text-[10px] leading-5 font-bold">
+                    수유 {stats.count}회/ 평균 {formatElapsed(stats.averageDuration)} / 총 {stats.totalVolume}ml
+                    <br />
+                    평균 사레 {stats.averageChoking.toFixed(1)}회/ 평균 간격{' '}
+                    {stats.averageInterval > 0 ? formatElapsed(stats.averageInterval) : '-'}
+                  </div>
+                )
+              })()}
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left text-sm">
+              <table className="w-full min-w-[620px] text-left text-sm">
                 <thead className="text-slate-400">
                   <tr>
-                    <th className="p-2">시각</th>
-                    <th className="p-2">수유시간</th>
-                    <th className="p-2">수유량</th>
-                    <th className="p-2">사레</th>
-                    <th className="p-2">첫 사레</th>
-                    <th className="p-2">게우기</th>
-                    <th className="p-2">메모</th>
-                    <th className="p-2">관리</th>
+                    <th className="px-2">시각</th>
+                    <th className="px-2">수유시간</th>
+                    <th className="px-2">수유량</th>
+                    <th className="px-2">사레</th>
+                    <th className="px-2">첫 사레</th>
+                    <th className="px-2">게우기</th>
+                    <th className="px-2">메모</th>
+                    <th className="px-2">관리</th>
                   </tr>
                 </thead>
 
@@ -1351,22 +1542,41 @@ const lastRehabGap = lastRehab
     )}
 
     {historyType === 'rehab' && (
-      <div className="space-y-5">
+      <div className="space-y-3">
         {Object.entries(groupedRehabHistory).map(([date, items]) => (
           <div key={date} className="rounded-2xl bg-slate-800 p-3">
-            <div className="mb-3 rounded-xl bg-slate-950 p-3 text-center font-bold">
-              {date}
-            </div>
+                    <div className="mb-2 rounded-xl bg-slate-950 px-3 py-2">
+          <div className="text-center text-sm font-bold text-slate-300">
+            {date}
+          </div>
+
+          {(() => {
+            const stats = getRehabDayStats(items as RehabRecord[])
+
+            const lines = rehabTypes
+              .filter((type) => stats[type] > 0)
+              .map(
+                (type) =>
+                  `${displayRehabName(type)} ${formatElapsed(stats[type])}`
+              )
+
+            return (
+              <div className="mt-1 text-center text-[10px] leading-5 ">
+                {lines.length > 0 ? lines.join('/ ') : '기록 없음'}
+              </div>
+            )
+          })()}
+        </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-left text-sm">
+              <table className="w-full min-w-[460px] text-left text-sm">
                 <thead className="text-slate-400">
                   <tr>
-                    <th className="p-2">시각</th>
-                    <th className="p-2">재활 종류</th>
-                    <th className="p-2">운동 시간</th>
-                    <th className="p-2">메모</th>
-                    <th className="p-2">관리</th>
+                    <th className="px-2">시각</th>
+                    <th className="px-2">재활 종류</th>
+                    <th className="px-2">운동 시간</th>
+                    <th className="px-2">메모</th>
+                    <th className="px-2">관리</th>
                   </tr>
                 </thead>
 
