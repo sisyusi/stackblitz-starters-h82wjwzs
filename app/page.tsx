@@ -1075,7 +1075,7 @@ const lastRehabGap = lastRehab
                 
               <button
                 onClick={startFeeding}
-                className="w-full rounded-3xl bg-orange-500 py-10 text-5xl font-bold shadow-lg active:scale-95"
+                className="w-full rounded-3xl bg-orange-500 py-10 text-5xl text-center font-bold shadow-lg active:scale-95"
               >
                 수유 시작
               </button>
@@ -1103,25 +1103,25 @@ const lastRehabGap = lastRehab
 
   <div className="grid grid-cols-2 gap-3 text-center">
     <div>
-      <p className="text-xs text-slate-400">수유량</p>
+      <p className="text-3x text-slate-400">수유량</p>
       <p className="text-lg font-bold">{todayVolume} ml</p>
     </div>
 
     <div>
-      <p className="text-xs text-slate-400">수유 횟수</p>
+      <p className="text-3x text-slate-400">수유 횟수</p>
       <p className="text-lg font-bold">{todayFeedCount}회</p>
     </div>
 
     <div>
-      <p className="text-xs text-slate-400">평균 사레 횟수</p>
+      <p className="text-3x text-slate-400">평균 사레 횟수</p>
       <p className="text-lg font-bold">
         {todayAverageChoking.toFixed(1)}회
       </p>
     </div>
 
     <div>
-      <p className="text-xs text-slate-400">직전 수유 후</p>
-      <p className="text-lg font-bold">
+      <p className="text-3x text-slate-400">직전 수유 후</p>
+      <p className="text-5x font-bold">
         {formatElapsedHM(lastFeedGap)}
       </p>
     </div>
@@ -1129,10 +1129,11 @@ const lastRehabGap = lastRehab
 </div>
 
     {/* 재활 */}
+    
     <div className="mb-3 flex items-center justify-between">
   <p className="text-sm font-bold text-slate-300">재활</p>
 
-  <div className="text-right">
+  <div className="text-center">
     <p className="text-xs text-slate-400">총 시간</p>
     <p className="text-sm font-extrabold text-green-400">
       {formatElapsed(todayRehabSeconds)}
@@ -1140,24 +1141,29 @@ const lastRehabGap = lastRehab
   </div>
 </div>
 
-<div className="space-y-2">
+<div className="grid grid-cols-2 gap-2">
   {rehabTypes.map((type) => {
     const seconds = todayRehabTotals[type] ?? 0
     const hasRecord = seconds > 0
 
     return (
-      <div key={type} className="flex justify-between text-sm">
-        <span className={hasRecord ? 'font-extrabold text-green-400' : 'text-slate-500'}>
-        {displayRehabName(type)}
-        </span>
+      <div
+        key={type}
+        className="rounded-2xl bg-slate-700 p-1 text-center"
+      >
+        <p className={hasRecord ? 'text-2x font-bold text-green-400' : 'text-2x'}>
+          {displayRehabName(type)}
+        </p>
 
-        <span className={hasRecord ? 'font-extrabold text-green-400' : 'text-slate-500'}>
+        <p className={hasRecord ? 'mt-1 text-2x font-extrabold text-green-400' : 'mt-1 text-2x font-bold'}>
           {formatElapsed(seconds)}
-        </span>
+        </p>
       </div>
     )
   })}
 </div>
+
+
       <div className="mt-3 text-right text-sm font-extrabold">
         마지막 재활 후 {formatElapsedHM(lastRehabGap)}
       </div>
@@ -1175,11 +1181,11 @@ const lastRehabGap = lastRehab
       <>
 <button
   onClick={handleFeedMainButton}
-  className={`w-full rounded-3xl p-3 text-center ${
+  className={`w-full rounded-3xl py-8 text-center ${
     feedPaused ? 'bg-slate-500' : 'bg-green-600'
   }`}
 >
-      <p className="text-sm opacity-90">
+      <p className="text-lg opacity-90">
         수유 시작
         {activeFeed && (
           <span className="ml-1">
@@ -1194,7 +1200,7 @@ const lastRehabGap = lastRehab
         )}
       </p>
 
-  <p className="mt-3 text-3xl font-extrabold">
+  <p className="mt-3 text-5xl font-extrabold">
     {formatElapsed(getFeedElapsed(activeFeed))}
   </p>
 
@@ -1209,21 +1215,21 @@ const lastRehabGap = lastRehab
     chokingFlash ? 'scale-105 ring-4 ring-yellow-300 bg-yellow-500 text-black' : ''
   }`}
 >
-  <div className="text-3xl font-extrabold">
+  <div className="text-5xl font-extrabold">
     사레 발생
   </div>
 
-  <div className="mt-2 text-2xl font-extrabold">
+  <div className="mt-4 text-3xl font-extrabold">
     (총 {activeFeed.choking_count}회)
   </div>
   
   {lastChokingGap !== null && (
   <div className="mt-2 rounded-2xl bg-red-700/40 p-2">
-    <p className="text-sm text-red-200">
+    <p className="text-lg text-red-200">
       직전 사레 후
     </p>
 
-    <p className="mt-1 text-2xl font-extrabold text-white">
+    <p className="mt-1 text-3xl font-extrabold text-white">
       {formatElapsed(lastChokingGap)}
     </p>
   </div>
@@ -1237,7 +1243,7 @@ const lastRehabGap = lastRehab
 
   {/* 2. 첫 사레 / 이전 사레 */}
   {getActiveChokingMessages().length > 0 && (
-  <div className="rounded-2xl bg-slate-800 p-3 text-sm text-slate-200 space-y-1">
+  <div className="rounded-2xl bg-slate-800 p-3 text-2xs text-slate-200 space-y-1">
     {getActiveChokingMessages().map((text, index) => (
       <p key={index}>{text}</p>
     ))}
@@ -1248,14 +1254,14 @@ const lastRehabGap = lastRehab
 <div className="mt-4">
   <button
     onClick={finishFeeding}
-    className="w-full rounded-2xl bg-slate-100 py-4 font-bold text-slate-950"
+    className="w-full rounded-2xl bg-slate-100 py-5 text-2xl font-bold text-slate-950"
   >
     수유 종료 및 저장
   </button>
 
   <button
     onClick={cancelFeeding}
-    className="mt-9 w-full rounded-2xl border border-red-500 bg-transparent py-3 font-bold text-red-400"
+    className="mt-11 w-full rounded-2xl border border-red-500 bg-transparent py-3 font-bold text-red-400"
   >
     수유 취소
   </button>
