@@ -43,6 +43,20 @@ type RehabRecord = {
 }
 
 export default function Page() {
+
+    const [manualStartTime, setManualStartTime] = useState("");
+    const [manualEndTime, setManualEndTime] = useState("");
+    const [manualAmount, setManualAmount] = useState("");
+    const [manualChokingCount, setManualChokingCount] = useState("");
+    const [manualMemo, setManualMemo] = useState("");
+  
+    const [showManualFeedForm, setShowManualFeedForm] = useState(false)
+    
+    const [statsRange, setStatsRange] = useState<7 | 30>(7)
+const [selectedStatsDay, setSelectedStatsDay] = useState<any | null>(null)
+
+// 기존 코드 계속...
+
   const [tab, setTab] = useState<Tab>('record')
   const [inputMode, setInputMode] = useState<InputMode>('none')
   const [now, setNow] = useState(new Date())
@@ -398,6 +412,75 @@ export default function Page() {
     await loadFeedEvents()
   }
 
+  const addManualFeedRecord = async () => {
+    if (!manualStartTime || !manualEndTime || !manualAmount) {
+      alert('시작 시간, 종료 시간, 수유량을 입력해주세요.')
+      return
+    }
+  
+    if (new Date(manualEndTime) <= new Date(manualStartTime)) {
+      alert('종료 시간은 시작 시간보다 늦어야 합니다.')
+      return
+    }
+  
+    const startTime = new Date(manualStartTime)
+    const endTime = new Date(manualEndTime)
+  
+    const durationSeconds = Math.floor(
+      (endTime.getTime() - startTime.getTime()) / 1000
+    )
+  
+    const { data, error } = await supabase
+      .from('feed_records')
+      .insert({
+        baby_id: BABY_ID,
+        start_time: startTime.toISOString(),
+        end_time: endTime.toISOString(),
+        volume_ml: Number(manualAmount),
+        choking_count: Number(manualChokingCount || 0),
+        memo: manualMemo || '',
+        created_by: userId,
+      })
+      .select()
+      .single()
+  
+    if (error) {
+      alert(error.message)
+      return
+    }
+  
+    await supabase.from('feed_events').insert([
+      {
+        record_id: data.id,
+        baby_id: BABY_ID,
+        event_type: 'start',
+        event_time: startTime.toISOString(),
+        elapsed_seconds: 0,
+        created_by: userId,
+      },
+      {
+        record_id: data.id,
+        baby_id: BABY_ID,
+        event_type: 'end',
+        event_time: endTime.toISOString(),
+        elapsed_seconds: durationSeconds,
+        created_by: userId,
+      },
+    ])
+  
+    setManualStartTime('')
+    setManualEndTime('')
+    setManualAmount('')
+    setManualMemo('')
+
+    setManualChokingCount('')
+    setShowManualFeedForm(false)
+  
+    await loadFeedRecords()
+    await loadFeedEvents()
+  
+    alert('수유 기록이 추가되었습니다.')
+  }
 
   const deleteRehabRecord = async (record: RehabRecord) => {
     if (!confirm('이 재활 기록을 삭제할까요?')) return
@@ -975,6 +1058,75 @@ const lastRehabGap = lastRehab
   const groupedFeedHistory = groupByDate(feedRecords)
   const groupedRehabHistory = groupByDate(rehabRecords)
 
+
+  const formatDateKey = (date: Date) => {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+  
+  const getRecentStats = () => {
+    return Array.from({ length: statsRange }).map((_, index) => {
+      const date = new Date()
+      date.setDate(date.getDate() - (statsRange - 1 - index))
+  
+      const dateKey = formatDateKey(date)
+      const label = `${date.getMonth() + 1}/${date.getDate()}`
+      const isToday = dateKey === formatDateKey(new Date())
+  
+      const dayFeeds = feedRecords.filter(
+        (r) => r.start_time?.slice(0, 10) === dateKey
+      )
+  
+      const dayRehabs = rehabRecords.filter(
+        (r) => r.start_time?.slice(0, 10) === dateKey
+      )
+  
+      const totalVolume = dayFeeds.reduce(
+        (sum, r) => sum + Number(r.volume_ml || 0),
+        0
+      )
+  
+      const totalChoking = dayFeeds.reduce(
+        (sum, r) => sum + Number(r.choking_count || 0),
+        0
+      )
+  
+      const chokingPerFeed =
+        dayFeeds.length > 0 ? totalChoking / dayFeeds.length : 0
+  
+      const totalRehabSeconds = dayRehabs.reduce(
+        (sum, r) => sum + Number(r.duration_seconds || 0),
+        0
+      )
+  
+      return {
+        dateKey,
+        label,
+        isToday,
+        feedCount: dayFeeds.length,
+        totalVolume,
+        totalChoking,
+        chokingPerFeed,
+        totalRehabSeconds,
+        totalRehabMinutes: Math.round(totalRehabSeconds / 60),
+      }
+    })
+  }
+  
+  const recentStats = getRecentStats()
+  
+  const maxVolume = Math.max(...recentStats.map((d) => d.totalVolume), 1)
+  const maxChoking = Math.max(...recentStats.map((d) => d.chokingPerFeed), 1)
+  const maxRehab = Math.max(...recentStats.map((d) => d.totalRehabMinutes), 1)
+  
+  const yTicks = [1, 0.75, 0.5, 0.25, 0]
+
+
+ 
+
+
   const downloadCSV = () => {
     const header = ['구분', '시작', '종료', '시간', '수유량', '사레', '첫 사레', '재활종류', '메모']
 
@@ -1121,7 +1273,7 @@ const lastRehabGap = lastRehab
 
     <div>
       <p className="text-3x text-slate-400">직전 수유 후</p>
-      <p className="text-5x font-bold">
+      <p className="text-[18px] font-bold">
         {formatElapsedHM(lastFeedGap)}
       </p>
     </div>
@@ -1175,7 +1327,6 @@ const lastRehabGap = lastRehab
 
 {inputMode === 'feed' && (
   <section className="rounded-3xl bg-slate-900 p-5 shadow-xl">
-    <h2 className="mb-2 text-lg font-bold">수유 입력</h2>
 
     {activeFeed && (
       <>
@@ -1355,8 +1506,6 @@ const lastRehabGap = lastRehab
               <section className="rounded-3xl bg-slate-900 p-5 shadow-xl">
                  <div className="flex justify-between items-center mb-4">
                  
-                  <h2 className="text-lg font-bold">재활 입력</h2>
-
                   {!activeRehab && (
                     <button
                       onClick={() => {
@@ -1454,9 +1603,7 @@ const lastRehabGap = lastRehab
 
 {tab === 'history' && (
   <section className="rounded-3xl bg-slate-900 p-4 shadow-xl">
-    <h2 className="mb-4 text-lg font-bold">이력</h2>
-
-    <div className="mb-4 grid grid-cols-2 gap-2">
+       <div className="mb-4 grid grid-cols-2 gap-2">
       <button
         onClick={() => setHistoryType('feed')}
         className={`rounded-2xl py-3 font-bold ${
@@ -1478,6 +1625,85 @@ const lastRehabGap = lastRehab
 
     {historyType === 'feed' && (
       <div className="space-y-5">
+
+    <div className="rounded-2xl bg-slate-800 p-3">
+      <button
+        onClick={() => setShowManualFeedForm(!showManualFeedForm)}
+        className="flex w-full items-center justify-between rounded-xl bg-slate-950 px-4 py-3 text-left font-bold text-slate-200"
+      >
+        <span>빠진 수유 기록 추가</span>
+        <span>{showManualFeedForm ? '▲' : '▼'}</span>
+      </button>
+
+      {showManualFeedForm && (
+        <div className="mt-3 space-y-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <div className="mb-1 text-xs text-slate-400">시작 시간</div>
+              <input
+                type="datetime-local"
+                value={manualStartTime}
+                onChange={(e) => setManualStartTime(e.target.value)}
+                className="w-full rounded-xl bg-slate-900 p-3 text-sm"
+              />
+            </div>
+
+            <div>
+              <div className="mb-1 text-xs text-slate-400">종료 시간</div>
+              <input
+                type="datetime-local"
+                value={manualEndTime}
+                onChange={(e) => setManualEndTime(e.target.value)}
+                className="w-full rounded-xl bg-slate-900 p-3 text-sm"
+              />
+            </div>
+
+            <div>
+              <div className="mb-1 text-xs text-slate-400">수유량 (ml)</div>
+              <input
+                type="number"
+                value={manualAmount}
+                onChange={(e) => setManualAmount(e.target.value)}
+                className="w-full rounded-xl bg-slate-900 p-3 text-sm"
+                placeholder="160"
+              />
+            </div>
+
+            <div>
+              <div className="mb-1 text-xs text-slate-400">사레 횟수</div>
+              <input
+                type="number"
+                value={manualChokingCount}
+                onChange={(e) => setManualChokingCount(e.target.value)}
+                className="w-full rounded-xl bg-slate-900 p-3 text-sm"
+                placeholder="0"
+                min="0"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="mb-1 text-xs text-slate-400">메모</div>
+              <input
+                value={manualMemo}
+                onChange={(e) => setManualMemo(e.target.value)}
+                className="w-full rounded-xl bg-slate-900 p-3 text-sm"
+                placeholder="외출 중 누락"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={addManualFeedRecord}
+            className="w-full rounded-2xl bg-blue-600 py-3 font-bold text-white"
+          >
+            수유 기록 추가
+          </button>
+        </div>
+      )}
+    </div>
+
+
+
         {Object.entries(groupedFeedHistory).map(([date, items]) => (
           <div key={date} className="rounded-2xl bg-slate-800 p-3">
             
@@ -1490,7 +1716,7 @@ const lastRehabGap = lastRehab
                 const stats = getFeedDayStats(items as FeedRecord[])
 
                 return (
-                  <div className="mt-1 text-center text-[10px] leading-5 font-bold">
+                  <div className="mt-1 text-center text-[14px] leading-5 font-bold">
                     수유 {stats.count}회/ 평균 {formatElapsed(stats.averageDuration)} / 총 {stats.totalVolume}ml
                     <br />
                     평균 사레 {stats.averageChoking.toFixed(1)}회/ 평균 간격{' '}
@@ -1567,7 +1793,7 @@ const lastRehabGap = lastRehab
               )
 
             return (
-              <div className="mt-1 text-center text-[10px] leading-5 ">
+              <div className="mt-1 text-center text-[14px] leading-5 ">
                 {lines.length > 0 ? lines.join('/ ') : '기록 없음'}
               </div>
             )
@@ -1615,46 +1841,248 @@ const lastRehabGap = lastRehab
   </section>
 )}
 
-        {tab === 'stats' && (
-          <section className="space-y-4">
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-2xl bg-blue-600 p-4">
-                <p className="text-xs opacity-80">오늘 수유량</p>
-                <p className="text-xl font-bold">{todayVolume} ml</p>
-              </div>
-              <div className="rounded-2xl bg-red-600 p-4">
-                <p className="text-xs opacity-80">오늘 사레</p>
-                <p className="text-xl font-bold">{todayChoking}회</p>
-              </div>
-              <div className="rounded-2xl bg-green-600 p-4">
-                <p className="text-xs opacity-80">오늘 재활</p>
-                <p className="text-xl font-bold">{formatElapsed(todayRehabSeconds)}</p>
-              </div>
+{tab === 'stats' && (
+  <section className="space-y-5 rounded-3xl bg-slate-900 p-4 shadow-xl">
+    <div className="flex items-center justify-between">
+      <h2 className="text-lg font-bold">통계</h2>
+
+      <div className="flex rounded-2xl bg-slate-800 p-1 text-sm font-bold">
+        <button
+          onClick={() => setStatsRange(7)}
+          className={`rounded-xl px-3 py-2 ${
+            statsRange === 7 ? 'bg-blue-600 text-white' : 'text-slate-400'
+          }`}
+        >
+          7일
+        </button>
+
+        <button
+          onClick={() => setStatsRange(30)}
+          className={`rounded-xl px-3 py-2 ${
+            statsRange === 30 ? 'bg-blue-600 text-white' : 'text-slate-400'
+          }`}
+        >
+          30일
+        </button>
+      </div>
+    </div>
+
+    {/* 수유량 + 사레 복합 그래프 */}
+    <div className="rounded-2xl bg-slate-800 p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="text-sm font-bold text-slate-300">
+          수유량 + 수유당 사레횟수
+        </div>
+
+        <div className="flex gap-3 text-xs">
+          <div className="flex items-center gap-1">
+            <div className="h-3 w-3 rounded bg-blue-500" />
+            <span className="text-slate-400">수유량</span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <div className="h-3 w-3 rounded-full bg-red-500" />
+            <span className="text-slate-400">사레/수유</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="relative h-72">
+        {/* Y축 눈금 */}
+        <div className="absolute inset-0 left-8">
+          {yTicks.map((tick) => (
+            <div
+              key={tick}
+              className="absolute left-0 right-0 border-t border-slate-700"
+              style={{ top: `${(1 - tick) * 100}%` }}
+            >
+              <span className="absolute -left-8 -top-2 text-[10px] text-slate-500">
+                {Math.round(maxVolume * tick)}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="absolute inset-0 left-8 flex items-end justify-between gap-2 overflow-x-auto px-2 pb-7">
+          {recentStats.map((d) => {
+            const barHeight = (d.totalVolume / maxVolume) * 100
+            const pointBottom = (d.chokingPerFeed / maxChoking) * 100
+
+            return (
+              <button
+                key={d.dateKey}
+                onClick={() => setSelectedStatsDay(d)}
+                className="relative flex min-w-[36px] flex-1 flex-col items-center justify-end"
+              >
+                <div
+                  className={`w-7 rounded-t-xl ${
+                    d.isToday ? 'bg-yellow-400' : 'bg-blue-500'
+                  }`}
+                  style={{
+                    height: `${barHeight}%`,
+                    minHeight: d.totalVolume > 0 ? '8px' : '0px',
+                  }}
+                />
+
+                <div
+                  className="absolute z-20 h-4 w-4 rounded-full border-2 border-white bg-red-500"
+                  style={{
+                    bottom: `calc(${pointBottom}% + 28px)`,
+                  }}
+                />
+
+                <div
+                  className={`mt-2 text-[10px] ${
+                    d.isToday ? 'font-bold text-yellow-300' : 'text-slate-400'
+                  }`}
+                >
+                  {d.label}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* 사레 점 연결선 */}
+        <svg
+          className="pointer-events-none absolute inset-0 left-8 z-10 h-full w-[calc(100%-2rem)] overflow-visible pb-7"
+          preserveAspectRatio="none"
+        >
+          <polyline
+            fill="none"
+            stroke="#ef4444"
+            strokeWidth="3"
+            points={recentStats
+              .map((d, index) => {
+                const x =
+                  recentStats.length <= 1
+                    ? 0
+                    : (index / (recentStats.length - 1)) * 100
+
+                const y = 100 - (d.chokingPerFeed / maxChoking) * 100
+
+                return `${x},${y}`
+              })
+              .join(' ')}
+          />
+        </svg>
+      </div>
+    </div>
+
+    {/* 재활 시간 + 사레 상관 그래프 */}
+    <div className="rounded-2xl bg-slate-800 p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="text-sm font-bold text-slate-300">
+          재활 시간 + 사레횟수 상관
+        </div>
+
+        <div className="flex gap-3 text-xs">
+          <div className="flex items-center gap-1">
+            <div className="h-3 w-3 rounded bg-green-500" />
+            <span className="text-slate-400">재활분</span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <div className="h-3 w-3 rounded-full bg-red-500" />
+            <span className="text-slate-400">사레/수유</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex h-56 items-end justify-between gap-2 overflow-x-auto">
+        {recentStats.map((d) => (
+          <button
+            key={d.dateKey}
+            onClick={() => setSelectedStatsDay(d)}
+            className="flex min-w-[36px] flex-1 flex-col items-center justify-end"
+          >
+            <div className="mb-1 text-[10px] text-slate-400">
+              {d.totalRehabMinutes}분
             </div>
 
-            <div className="rounded-3xl bg-slate-900 p-5 shadow-xl">
-              <h2 className="mb-4 text-lg font-bold">수유 + 재활 통합 통계</h2>
-              <div className="space-y-4">
-                {combinedStats.map((d) => (
-                  <div key={d.date} className="rounded-2xl bg-slate-800 p-4">
-                    <p className="mb-2 font-bold">{d.date}</p>
-                    <p className="text-sm text-slate-300">수유 {d.feedCount}회 · 총 {d.totalVolume}ml</p>
-                    <p className="text-sm text-slate-300">사레 {d.chokingCount}회</p>
-                    <p className="text-sm text-slate-300">재활 {d.rehabCount}회 · {formatElapsed(d.rehabSeconds)}</p>
-                  </div>
-                ))}
-              </div>
+            <div
+              className={`w-7 rounded-t-xl ${
+                d.isToday ? 'bg-yellow-400' : 'bg-green-500'
+              }`}
+              style={{
+                height: `${(d.totalRehabMinutes / maxRehab) * 100}%`,
+                minHeight: d.totalRehabMinutes > 0 ? '8px' : '0px',
+              }}
+            />
+
+            <div className="mt-1 text-[10px] text-red-300">
+              {d.chokingPerFeed.toFixed(1)}회
             </div>
 
-            <button onClick={downloadCSV} className="w-full rounded-2xl bg-slate-800 py-4 font-bold">
-              CSV 다운로드
-            </button>
+            <div
+              className={`mt-1 text-[10px] ${
+                d.isToday ? 'font-bold text-yellow-300' : 'text-slate-400'
+              }`}
+            >
+              {d.label}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
 
-            <button onClick={logout} className="w-full rounded-2xl bg-slate-700 py-4 font-bold">
-              로그아웃
-            </button>
-          </section>
-        )}
+    {/* 터치 Tooltip */}
+    {selectedStatsDay && (
+      <div className="rounded-2xl bg-slate-950 p-4 text-sm shadow-xl">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="font-bold text-slate-200">
+            {selectedStatsDay.label} 상세
+          </div>
+
+          <button
+            onClick={() => setSelectedStatsDay(null)}
+            className="text-xs text-slate-400"
+          >
+            닫기
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 text-slate-300">
+          <div className="rounded-xl bg-slate-800 p-3">
+            <div className="text-xs text-slate-400">수유 횟수</div>
+            <div className="text-lg font-bold">
+              {selectedStatsDay.feedCount}회
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-slate-800 p-3">
+            <div className="text-xs text-slate-400">총 수유량</div>
+            <div className="text-lg font-bold">
+              {selectedStatsDay.totalVolume}ml
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-slate-800 p-3">
+            <div className="text-xs text-slate-400">총 사레</div>
+            <div className="text-lg font-bold">
+              {selectedStatsDay.totalChoking}회
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-slate-800 p-3">
+            <div className="text-xs text-slate-400">수유당 사레</div>
+            <div className="text-lg font-bold">
+              {selectedStatsDay.chokingPerFeed.toFixed(1)}회
+            </div>
+          </div>
+
+          <div className="col-span-2 rounded-xl bg-slate-800 p-3">
+            <div className="text-xs text-slate-400">재활 전체 시간</div>
+            <div className="text-lg font-bold">
+              {formatElapsed(selectedStatsDay.totalRehabSeconds)}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+  </section>
+)}
+
       </div>
 
       <nav className="fixed bottom-0 left-0 right-0 border-t border-slate-800 bg-slate-950 px-4 py-3">
