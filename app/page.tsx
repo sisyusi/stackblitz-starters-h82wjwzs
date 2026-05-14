@@ -55,6 +55,165 @@ export default function Page() {
     const [statsRange, setStatsRange] = useState<7 | 30>(7)
 const [selectedStatsDay, setSelectedStatsDay] = useState<any | null>(null)
 
+const formatTime = (dateString: string) => {
+  if (!dateString) return ''
+
+  return new Date(dateString).toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+const formatCsvDate = (value: any) => {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (isNaN(date.getTime())) return ''
+
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+
+  return `${y}-${m}-${d}`
+}
+
+const formatCsvTime = (value: any) => {
+  if (!value) return ''
+
+  const date = new Date(value)
+  if (isNaN(date.getTime())) return ''
+
+  const h = String(date.getHours()).padStart(2, '0')
+  const m = String(date.getMinutes()).padStart(2, '0')
+
+  return `${h}:${m}`
+}
+
+const getRecordStart = (record: any) => {
+  return (
+    record.started_at ||
+    record.start_time ||
+    record.startedAt ||
+    record.startTime ||
+    record.created_at ||
+    record.createdAt ||
+    ''
+  )
+}
+
+const getRecordEnd = (record: any) => {
+  return (
+    record.ended_at ||
+    record.end_time ||
+    record.endedAt ||
+    record.endTime ||
+    ''
+  )
+}
+
+const getRecordDurationSeconds = (record: any) => {
+  if (record.duration_seconds) return Number(record.duration_seconds)
+  if (record.elapsed_seconds) return Number(record.elapsed_seconds)
+  if (record.durationSeconds) return Number(record.durationSeconds)
+
+  const start = getRecordStart(record)
+  const end = getRecordEnd(record)
+
+  if (!start || !end) return 0
+
+  const startMs = new Date(start).getTime()
+  const endMs = new Date(end).getTime()
+
+  if (isNaN(startMs) || isNaN(endMs)) return 0
+
+  return Math.floor((endMs - startMs) / 1000)
+}
+
+const exportAllRecordsToCSV = () => {
+  const rows = [
+    [
+      '구분',
+      '날짜',
+      '시작시간',
+      '종료시간',
+      '종류',
+      '소요시간',
+      '수유량ml',
+      '사레횟수',
+      '메모/노트',
+    ],
+  ]
+
+  feedRecords.forEach((record: any) => {
+    const start = getRecordStart(record)
+    const end = getRecordEnd(record)
+    const durationSeconds = getRecordDurationSeconds(record)
+
+    rows.push([
+      '수유',
+      formatCsvDate(start),
+      formatCsvTime(start),
+      formatCsvTime(end),
+      '',
+      durationSeconds > 0 ? formatElapsed(durationSeconds) : '',
+      String(record.volume_ml ?? record.amount_ml ?? record.volume ?? ''),
+      String(record.choking_count ?? record.chokingCount ?? 0),
+      record.memo ?? '',
+    ])
+  })
+
+  rehabRecords.forEach((record: any) => {
+    const start = getRecordStart(record)
+    const end = getRecordEnd(record)
+    const durationSeconds = getRecordDurationSeconds(record)
+
+    rows.push([
+      '재활',
+      formatCsvDate(start),
+      formatCsvTime(start),
+      formatCsvTime(end),
+  
+      record.rehab_type ??
+      record.rehabType ??
+      record.type ??
+      record.exercise_type ??
+      record.exerciseType ??
+      record.name ??
+      '',
+  
+      durationSeconds > 0 ? formatElapsed(durationSeconds) : '',
+      '',
+      '',
+      record.note ?? record.memo ?? '',
+    ])
+  })
+
+  const csvContent = rows
+    .map((row) =>
+      row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+    )
+    .join('\n')
+
+  const blob = new Blob(['\uFEFF' + csvContent], {
+    type: 'text/csv;charset=utf-8;',
+  })
+
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = `수유_재활_전체기록_${formatCsvDate(new Date())}.csv`
+  link.style.display = 'none'
+
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+
+  window.URL.revokeObjectURL(url)
+}
+
+
+
 // 기존 코드 계속...
 
   const [tab, setTab] = useState<Tab>('record')
@@ -83,6 +242,8 @@ const [selectedStatsDay, setSelectedStatsDay] = useState<any | null>(null)
 
   const [historyType, setHistoryType] = useState<'feed' | 'rehab'>('feed')
 
+  const [rehabNote, setRehabNote] = useState('')
+
   const rehabTypes = [
     '터미타임',
     '공터미타임',
@@ -92,6 +253,7 @@ const [selectedStatsDay, setSelectedStatsDay] = useState<any | null>(null)
     '옆 누워 놀기',
     '시각추적 목 회전',
     '가슴 살살 두드림',
+    '보조하여 앉기',
   ]
 
 
@@ -1281,44 +1443,56 @@ const lastRehabGap = lastRehab
 </div>
 
     {/* 재활 */}
-    
+
     <div className="mb-3 flex items-center justify-between">
-  <p className="text-sm font-bold text-slate-300">재활</p>
+      <p className="text-lg font-bold text-slate-300">재활</p>
 
-  <div className="text-center">
-    <p className="text-xs text-slate-400">총 시간</p>
-    <p className="text-sm font-extrabold text-green-400">
-      {formatElapsed(todayRehabSeconds)}
-    </p>
-  </div>
-</div>
-
-<div className="grid grid-cols-2 gap-2">
-  {rehabTypes.map((type) => {
-    const seconds = todayRehabTotals[type] ?? 0
-    const hasRecord = seconds > 0
-
-    return (
-      <div
-        key={type}
-        className="rounded-2xl bg-slate-700 p-1 text-center"
-      >
-        <p className={hasRecord ? 'text-2x font-bold text-green-400' : 'text-2x'}>
-          {displayRehabName(type)}
-        </p>
-
-        <p className={hasRecord ? 'mt-1 text-2x font-extrabold text-green-400' : 'mt-1 text-2x font-bold'}>
-          {formatElapsed(seconds)}
+      <div className="text-center">
+        <p className="text-lg">총 시간</p>
+        <p className="text-lg font-extrabold text-green-400">
+          {formatElapsed(todayRehabSeconds)}
         </p>
       </div>
-    )
-  })}
-</div>
+    </div>
 
+    <div className="grid grid-cols-2 gap-2">
+      {rehabTypes.map((type) => {
+        const seconds = todayRehabTotals[type] ?? 0
+        const hasRecord = seconds > 0
 
-      <div className="mt-3 text-right text-sm font-extrabold">
-        마지막 재활 후 {formatElapsedHM(lastRehabGap)}
-      </div>
+        return (
+          <div
+            key={type}
+            onClick={() => startRehab(type)}
+            className="cursor-pointer rounded-2xl bg-slate-700 p-1 text-center active:scale-95"
+          >
+            <p
+              className={
+                hasRecord
+                  ? 'text-lg font-bold text-green-400'
+                  : 'text-lg font-bold '
+              }
+            >
+              {displayRehabName(type)}
+            </p>
+
+            <p
+              className={
+                hasRecord
+                  ? 'mt-1 text-lg font-extrabold text-green-400'
+                  : 'mt-1 text-lg font-bold'
+              }
+            >
+              {formatElapsed(seconds)}
+            </p>
+          </div>
+        )
+      })}
+    </div>
+
+    <div className="mt-3 text-right text-sm font-extrabold">
+      마지막 재활 후 {formatElapsedHM(lastRehabGap)}
+    </div>
   </div>
 
 
@@ -2080,6 +2254,27 @@ const lastRehabGap = lastRehab
         </div>
       </div>
     )}
+
+<div className="mt-4 flex justify-center">
+  <button
+    type="button"
+    onClick={exportAllRecordsToCSV}
+    className="
+      rounded-2xl
+      bg-green-500
+      px-4
+      py-3
+      text-sm
+      font-extrabold
+      text-white
+      shadow-lg
+      active:scale-95
+    "
+  >
+    수유 + 재활 CSV 저장
+  </button>
+</div>
+
   </section>
 )}
 
