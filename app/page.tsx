@@ -1305,10 +1305,7 @@ const maxChokingCount = Math.max(
   1
 )
 
-const maxAvgChokingSeconds = Math.max(
-  ...recentStats.map((d) => d.avgChokingSeconds ?? 0),
-  1
-)
+
 
 const maxRehabTypeSeconds = Math.max(
   ...recentStats.flatMap((d) =>
@@ -2244,11 +2241,7 @@ const maxRehabTypeSeconds = Math.max(
                 <div className="text-[11px] font-bold text-red-300">
                   {chokingCount}회
                 </div>
-
-                <div className="text-[10px] text-slate-300">
-                  평균 {formatElapsed(d.avgChokingSeconds ?? 0)}
-                </div>
-
+              
                 <div
                   className={`mt-1 text-[10px] ${
                     d.isToday ? 'font-bold text-yellow-300' : 'text-slate-400'
