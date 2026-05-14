@@ -214,7 +214,7 @@ const exportAllRecordsToCSV = () => {
 
 
 
-// 기존 코드 계속...
+// 기존 코드 계속...useState들이 모여있는 구역
 
   const [tab, setTab] = useState<Tab>('record')
   const [inputMode, setInputMode] = useState<InputMode>('none')
@@ -242,6 +242,9 @@ const exportAllRecordsToCSV = () => {
 
   const [historyType, setHistoryType] = useState<'feed' | 'rehab'>('feed')
 
+  const [currentRehabType, setCurrentRehabType] = useState('')
+  const [rehabStartedAt, setRehabStartedAt] = useState<string | null>(null)
+
   const [rehabNote, setRehabNote] = useState('')
 
   const rehabTypes = [
@@ -253,7 +256,8 @@ const exportAllRecordsToCSV = () => {
     '옆 누워 놀기',
     '시각추적 목 회전',
     '가슴 살살 두드림',
-    '보조하여 앉기',
+    '복근 자극(앉기 등)',
+    '촉각놀이',
   ]
 
 
@@ -985,7 +989,7 @@ const exportAllRecordsToCSV = () => {
 
   const startRehab = async (type: string) => {
     if (!userId) return alert('로그인이 필요합니다.')
-
+  
     const { data, error } = await supabase
       .from('rehab_records')
       .insert({
@@ -994,20 +998,26 @@ const exportAllRecordsToCSV = () => {
         start_time: new Date().toISOString(),
         end_time: null,
         duration_seconds: 0,
-        memo: '',
+  
+        memo: rehabNote,
+        note: rehabNote,
+  
         created_by: userId,
       })
       .select()
       .single()
-
+  
     if (error) return alert(error.message)
-
+  
     setActiveRehab(data as RehabRecord)
     setInputMode('rehab')
     setRehabPaused(false)
     setRehabPausedAt(null)
     setRehabPausedSeconds(0)
     setRehabMessage(`${type} 시작`)
+  
+    setRehabNote('')
+  
     await loadRehabRecords()
   }
 
@@ -1285,7 +1295,29 @@ const lastRehabGap = lastRehab
   
   const yTicks = [1, 0.75, 0.5, 0.25, 0]
 
+  const maxFeedVolume = Math.max(...recentStats.map((d) => d.totalVolume), 1)
+const maxFeedCount = Math.max(...recentStats.map((d) => d.feedCount), 1)
+const maxAvgFeedSeconds = Math.max(
+  ...recentStats.map((d) => d.avgFeedSeconds ?? 0),
+  1
+)
 
+const maxChokingCount = Math.max(
+  ...recentStats.map((d) => d.totalChoking ?? 0),
+  1
+)
+
+const maxAvgChokingSeconds = Math.max(
+  ...recentStats.map((d) => d.avgChokingSeconds ?? 0),
+  1
+)
+
+const maxRehabTypeSeconds = Math.max(
+  ...recentStats.flatMap((d) =>
+    rehabTypes.map((type) => d.rehabByTypeSeconds?.[type] ?? 0)
+  ),
+  1
+)
  
 
 
@@ -1754,6 +1786,21 @@ const lastRehabGap = lastRehab
             </div>
           </div>
         
+          <textarea
+            value={rehabNote}
+            onChange={(e) => setRehabNote(e.target.value)}
+            placeholder="재활 노트 입력"
+            className="
+              mt-3
+              w-full
+              rounded-2xl
+              bg-slate-800
+              p-3
+              text-sm
+              text-white
+              placeholder:text-slate-500
+            "
+            />
                   <button
                     onClick={finishRehab}
                     className="w-full rounded-3xl bg-slate-100 py-5 text-xl font-extrabold text-slate-950 shadow-lg active:scale-95"
@@ -1776,11 +1823,11 @@ const lastRehabGap = lastRehab
         )}
 
 {tab === 'history' && (
-  <section className="rounded-3xl bg-slate-900 p-4 shadow-xl">
-       <div className="mb-4 grid grid-cols-2 gap-2">
+  <section className="rounded-3xl bg-slate-900 p-3 shadow-xl">
+  <div className="sticky top-0 z-20 mb-3 grid grid-cols-2 gap-2 bg-slate-900 pb-2">
       <button
         onClick={() => setHistoryType('feed')}
-        className={`rounded-2xl py-3 font-bold ${
+        className={`rounded-2xl py-2 font-bold ${
           historyType === 'feed' ? 'bg-blue-600' : 'bg-slate-800'
         }`}
       >
@@ -1789,7 +1836,7 @@ const lastRehabGap = lastRehab
 
       <button
         onClick={() => setHistoryType('rehab')}
-        className={`rounded-2xl py-3 font-bold ${
+        className={`rounded-2xl py-2 font-bold ${
           historyType === 'rehab' ? 'bg-green-600' : 'bg-slate-800'
         }`}
       >
@@ -2041,72 +2088,171 @@ const lastRehabGap = lastRehab
       </div>
     </div>
 
-    {/* 수유량 + 사레 복합 그래프 */}
+    {/* 1. 수유량 */}
     <div className="rounded-2xl bg-slate-800 p-4">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4">
         <div className="text-sm font-bold text-slate-300">
-          수유량 + 수유당 사레횟수
+          일별 수유량 · 수유횟수 · 평균 수유시간
+        </div>
+        <div className="mt-1 text-xs text-slate-500">
+          Y축 최대 800ml / 50ml 간격
+        </div>
+      </div>
+
+      <div className="relative h-80">
+        {/* 실제 그래프 영역 */}
+        <div className="absolute left-12 right-0 top-0 h-56">
+          {/* Y축 눈금 */}
+          {Array.from({ length: 17 }, (_, i) => i * 50).map((tick) => (
+            <div
+              key={tick}
+              className="absolute left-0 right-0 border-t border-slate-700"
+              style={{ bottom: `${(tick / 800) * 100}%` }}
+            >
+              <span className="absolute -left-12 -top-2 w-10 text-right text-[10px] text-slate-500">
+                {tick}
+              </span>
+            </div>
+          ))}
+
+          {/* 막대 */}
+          <div className="absolute inset-0 flex items-end justify-between gap-2 overflow-x-auto">
+            {recentStats.map((d) => (
+              <button
+                key={d.dateKey}
+                onClick={() => setSelectedStatsDay(d)}
+                className="flex h-full min-w-[44px] flex-1 flex-col items-center justify-end"
+              >
+                <div
+                  className={`w-8 rounded-t-2xl ${
+                    d.isToday ? 'bg-yellow-400' : 'bg-blue-500'
+                  }`}
+                  style={{
+                    height: `${Math.min(
+                      100,
+                      Math.max(
+                        (d.totalVolume / 800) * 100,
+                        d.totalVolume > 0 ? 4 : 0
+                      )
+                    )}%`,
+                  }}
+                />
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex gap-3 text-xs">
-          <div className="flex items-center gap-1">
-            <div className="h-3 w-3 rounded bg-blue-500" />
-            <span className="text-slate-400">수유량</span>
-          </div>
+        {/* 하단 정보 */}
+        <div className="absolute bottom-0 left-12 right-0 flex justify-between gap-2 overflow-x-auto">
+          {recentStats.map((d) => (
+            <button
+              key={`${d.dateKey}-label`}
+              onClick={() => setSelectedStatsDay(d)}
+              className="min-w-[44px] flex-1 text-center"
+            >
+              <div className="text-[11px] font-bold text-slate-200">
+                {d.totalVolume}ml
+              </div>
 
-          <div className="flex items-center gap-1">
-            <div className="h-3 w-3 rounded-full bg-red-500" />
-            <span className="text-slate-400">사레/수유</span>
-          </div>
+              <div className="text-[10px] text-blue-200">
+                {d.feedCount}회
+              </div>
+
+              <div className="text-[10px] text-green-300">
+                평균 {formatElapsed(d.avgFeedSeconds ?? 0)}
+              </div>
+
+              <div
+                className={`mt-1 text-[10px] ${
+                  d.isToday ? 'font-bold text-yellow-300' : 'text-slate-400'
+                }`}
+              >
+                {d.label}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    {/* 2. 사레 */}
+    <div className="rounded-2xl bg-slate-800 p-4">
+      <div className="mb-4">
+        <div className="text-sm font-bold text-slate-300">
+          일별 사레횟수 · 평균 사레시간
+        </div>
+        <div className="mt-1 text-xs text-slate-500">
+          Y축 최대 20회 / 1회 간격
         </div>
       </div>
 
       <div className="relative h-72">
-        {/* Y축 눈금 */}
-        <div className="absolute inset-0 left-8">
-          {yTicks.map((tick) => (
+        <div className="absolute left-10 right-0 top-0 h-48">
+          {/* Y축 눈금 */}
+          {Array.from({ length: 21 }, (_, i) => i).map((tick) => (
             <div
               key={tick}
               className="absolute left-0 right-0 border-t border-slate-700"
-              style={{ top: `${(1 - tick) * 100}%` }}
+              style={{ bottom: `${(tick / 20) * 100}%` }}
             >
-              <span className="absolute -left-8 -top-2 text-[10px] text-slate-500">
-                {Math.round(maxVolume * tick)}
+              <span className="absolute -left-10 -top-2 w-8 text-right text-[10px] text-slate-500">
+                {tick}
               </span>
             </div>
           ))}
+
+          {/* 막대 */}
+          <div className="absolute inset-0 flex items-end justify-between gap-2 overflow-x-auto">
+            {recentStats.map((d) => {
+              const chokingCount = d.totalChoking ?? 0
+
+              return (
+                <button
+                  key={d.dateKey}
+                  onClick={() => setSelectedStatsDay(d)}
+                  className="flex h-full min-w-[44px] flex-1 flex-col items-center justify-end"
+                >
+                  <div
+                    className={`w-8 rounded-t-2xl ${
+                      d.isToday ? 'bg-yellow-400' : 'bg-red-500'
+                    }`}
+                    style={{
+                      height: `${Math.min(
+                        100,
+                        Math.max(
+                          (chokingCount / 20) * 100,
+                          chokingCount > 0 ? 4 : 0
+                        )
+                      )}%`,
+                    }}
+                  />
+                </button>
+              )
+            })}
+          </div>
         </div>
 
-        <div className="absolute inset-0 left-8 flex items-end justify-between gap-2 overflow-x-auto px-2 pb-7">
+        {/* 하단 정보 */}
+        <div className="absolute bottom-0 left-10 right-0 flex justify-between gap-2 overflow-x-auto">
           {recentStats.map((d) => {
-            const barHeight = (d.totalVolume / maxVolume) * 100
-            const pointBottom = (d.chokingPerFeed / maxChoking) * 100
+            const chokingCount = d.totalChoking ?? 0
 
             return (
               <button
-                key={d.dateKey}
+                key={`${d.dateKey}-choking-label`}
                 onClick={() => setSelectedStatsDay(d)}
-                className="relative flex min-w-[36px] flex-1 flex-col items-center justify-end"
+                className="min-w-[44px] flex-1 text-center"
               >
-                <div
-                  className={`w-7 rounded-t-xl ${
-                    d.isToday ? 'bg-yellow-400' : 'bg-blue-500'
-                  }`}
-                  style={{
-                    height: `${barHeight}%`,
-                    minHeight: d.totalVolume > 0 ? '8px' : '0px',
-                  }}
-                />
+                <div className="text-[11px] font-bold text-red-300">
+                  {chokingCount}회
+                </div>
+
+                <div className="text-[10px] text-slate-300">
+                  평균 {formatElapsed(d.avgChokingSeconds ?? 0)}
+                </div>
 
                 <div
-                  className="absolute z-20 h-4 w-4 rounded-full border-2 border-white bg-red-500"
-                  style={{
-                    bottom: `calc(${pointBottom}% + 28px)`,
-                  }}
-                />
-
-                <div
-                  className={`mt-2 text-[10px] ${
+                  className={`mt-1 text-[10px] ${
                     d.isToday ? 'font-bold text-yellow-300' : 'text-slate-400'
                   }`}
                 >
@@ -2116,91 +2262,110 @@ const lastRehabGap = lastRehab
             )
           })}
         </div>
-
-        {/* 사레 점 연결선 */}
-        <svg
-          className="pointer-events-none absolute inset-0 left-8 z-10 h-full w-[calc(100%-2rem)] overflow-visible pb-7"
-          preserveAspectRatio="none"
-        >
-          <polyline
-            fill="none"
-            stroke="#ef4444"
-            strokeWidth="3"
-            points={recentStats
-              .map((d, index) => {
-                const x =
-                  recentStats.length <= 1
-                    ? 0
-                    : (index / (recentStats.length - 1)) * 100
-
-                const y = 100 - (d.chokingPerFeed / maxChoking) * 100
-
-                return `${x},${y}`
-              })
-              .join(' ')}
-          />
-        </svg>
       </div>
     </div>
 
-    {/* 재활 시간 + 사레 상관 그래프 */}
+    {/* 3. 재활종류별 치료시간 */}
     <div className="rounded-2xl bg-slate-800 p-4">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4">
         <div className="text-sm font-bold text-slate-300">
-          재활 시간 + 사레횟수 상관
+          일별 재활종류별 치료시간
         </div>
-
-        <div className="flex gap-3 text-xs">
-          <div className="flex items-center gap-1">
-            <div className="h-3 w-3 rounded bg-green-500" />
-            <span className="text-slate-400">재활분</span>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <div className="h-3 w-3 rounded-full bg-red-500" />
-            <span className="text-slate-400">사레/수유</span>
-          </div>
+        <div className="mt-1 text-xs text-slate-500">
+          Y축 최대 60분 / 10분 간격
         </div>
       </div>
 
-      <div className="flex h-56 items-end justify-between gap-2 overflow-x-auto">
-        {recentStats.map((d) => (
-          <button
-            key={d.dateKey}
-            onClick={() => setSelectedStatsDay(d)}
-            className="flex min-w-[36px] flex-1 flex-col items-center justify-end"
-          >
-            <div className="mb-1 text-[10px] text-slate-400">
-              {d.totalRehabMinutes}분
+      <div className="space-y-4">
+        {rehabTypes.map((type) => (
+          <div key={type} className="rounded-2xl bg-slate-900 p-3">
+            <div className="mb-2 text-xs font-bold text-green-300">
+              {displayRehabName(type)}
             </div>
 
-            <div
-              className={`w-7 rounded-t-xl ${
-                d.isToday ? 'bg-yellow-400' : 'bg-green-500'
-              }`}
-              style={{
-                height: `${(d.totalRehabMinutes / maxRehab) * 100}%`,
-                minHeight: d.totalRehabMinutes > 0 ? '8px' : '0px',
-              }}
-            />
+            <div className="relative h-60">
+              <div className="absolute left-10 right-0 top-0 h-40">
+                {/* Y축 눈금 */}
+                {Array.from({ length: 7 }, (_, i) => i * 10).map((tick) => (
+                  <div
+                    key={tick}
+                    className="absolute left-0 right-0 border-t border-slate-700"
+                    style={{ bottom: `${(tick / 60) * 100}%` }}
+                  >
+                    <span className="absolute -left-10 -top-2 w-8 text-right text-[10px] text-slate-500">
+                      {tick}
+                    </span>
+                  </div>
+                ))}
 
-            <div className="mt-1 text-[10px] text-red-300">
-              {d.chokingPerFeed.toFixed(1)}회
-            </div>
+                {/* 막대 */}
+                <div className="absolute inset-0 flex items-end justify-between gap-2 overflow-x-auto">
+                  {recentStats.map((d) => {
+                    const seconds = d.rehabByTypeSeconds?.[type] ?? 0
+                    const minutes = Math.round(seconds / 60)
 
-            <div
-              className={`mt-1 text-[10px] ${
-                d.isToday ? 'font-bold text-yellow-300' : 'text-slate-400'
-              }`}
-            >
-              {d.label}
+                    return (
+                      <button
+                        key={`${d.dateKey}-${type}`}
+                        onClick={() => setSelectedStatsDay(d)}
+                        className="flex h-full min-w-[40px] flex-1 flex-col items-center justify-end"
+                      >
+                        <div
+                          className={`w-7 rounded-t-xl ${
+                            d.isToday ? 'bg-yellow-400' : 'bg-green-500'
+                          }`}
+                          style={{
+                            height: `${Math.min(
+                              100,
+                              Math.max(
+                                (minutes / 60) * 100,
+                                minutes > 0 ? 4 : 0
+                              )
+                            )}%`,
+                          }}
+                        />
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* 하단 정보 */}
+              <div className="absolute bottom-0 left-10 right-0 flex justify-between gap-2 overflow-x-auto">
+                {recentStats.map((d) => {
+                  const seconds = d.rehabByTypeSeconds?.[type] ?? 0
+                  const minutes = Math.round(seconds / 60)
+
+                  return (
+                    <button
+                      key={`${d.dateKey}-${type}-label`}
+                      onClick={() => setSelectedStatsDay(d)}
+                      className="min-w-[40px] flex-1 text-center"
+                    >
+                      <div className="text-[10px] text-green-300">
+                        {minutes}분
+                      </div>
+
+                      <div
+                        className={`mt-1 text-[10px] ${
+                          d.isToday
+                            ? 'font-bold text-yellow-300'
+                            : 'text-slate-400'
+                        }`}
+                      >
+                        {d.label}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </button>
+          </div>
         ))}
       </div>
     </div>
 
-    {/* 터치 Tooltip */}
+    {/* 상세 */}
     {selectedStatsDay && (
       <div className="rounded-2xl bg-slate-950 p-4 text-sm shadow-xl">
         <div className="mb-2 flex items-center justify-between">
@@ -2232,49 +2397,64 @@ const lastRehabGap = lastRehab
           </div>
 
           <div className="rounded-xl bg-slate-800 p-3">
-            <div className="text-xs text-slate-400">총 사레</div>
+            <div className="text-xs text-slate-400">평균 수유시간</div>
             <div className="text-lg font-bold">
-              {selectedStatsDay.totalChoking}회
+              {formatElapsed(selectedStatsDay.avgFeedSeconds ?? 0)}
             </div>
           </div>
 
           <div className="rounded-xl bg-slate-800 p-3">
-            <div className="text-xs text-slate-400">수유당 사레</div>
+            <div className="text-xs text-slate-400">총 사레</div>
             <div className="text-lg font-bold">
-              {selectedStatsDay.chokingPerFeed.toFixed(1)}회
+              {selectedStatsDay.totalChoking ?? 0}회
             </div>
           </div>
 
           <div className="col-span-2 rounded-xl bg-slate-800 p-3">
-            <div className="text-xs text-slate-400">재활 전체 시간</div>
+            <div className="text-xs text-slate-400">평균 사레시간</div>
             <div className="text-lg font-bold">
-              {formatElapsed(selectedStatsDay.totalRehabSeconds)}
+              {formatElapsed(selectedStatsDay.avgChokingSeconds ?? 0)}
+            </div>
+          </div>
+
+          <div className="col-span-2 rounded-xl bg-slate-800 p-3">
+            <div className="mb-2 text-xs text-slate-400">
+              재활종류별 시간
+            </div>
+
+            <div className="space-y-1">
+              {rehabTypes.map((type) => {
+                const seconds = selectedStatsDay.rehabByTypeSeconds?.[type] ?? 0
+
+                return (
+                  <div
+                    key={type}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <span>{displayRehabName(type)}</span>
+
+                    <span className="font-bold text-green-300">
+                      {formatElapsed(seconds)}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
       </div>
     )}
 
-<div className="mt-4 flex justify-center">
-  <button
-    type="button"
-    onClick={exportAllRecordsToCSV}
-    className="
-      rounded-2xl
-      bg-green-500
-      px-4
-      py-3
-      text-sm
-      font-extrabold
-      text-white
-      shadow-lg
-      active:scale-95
-    "
-  >
-    수유 + 재활 CSV 저장
-  </button>
-</div>
-
+    {/* CSV */}
+    <div className="mt-4 flex justify-center">
+      <button
+        type="button"
+        onClick={exportAllRecordsToCSV}
+        className="rounded-2xl bg-green-500 px-4 py-3 text-sm font-extrabold text-white shadow-lg active:scale-95"
+      >
+        수유 + 재활 CSV 저장
+      </button>
+    </div>
   </section>
 )}
 
