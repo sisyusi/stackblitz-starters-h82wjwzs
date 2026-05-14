@@ -1307,12 +1307,7 @@ const maxChokingCount = Math.max(
 
 
 
-const maxRehabTypeSeconds = Math.max(
-  ...recentStats.flatMap((d) =>
-    rehabTypes.map((type) => d.rehabByTypeSeconds?.[type] ?? 0)
-  ),
-  1
-)
+
  
 
 
@@ -2292,7 +2287,7 @@ const maxRehabTypeSeconds = Math.max(
                 {/* 막대 */}
                 <div className="absolute inset-0 flex items-end justify-between gap-2 overflow-x-auto">
                   {recentStats.map((d) => {
-                    const seconds = d.rehabByTypeSeconds?.[type] ?? 0
+                    const seconds =  0
                     const minutes = Math.round(seconds / 60)
 
                     return (
@@ -2324,7 +2319,7 @@ const maxRehabTypeSeconds = Math.max(
               {/* 하단 정보 */}
               <div className="absolute bottom-0 left-10 right-0 flex justify-between gap-2 overflow-x-auto">
                 {recentStats.map((d) => {
-                  const seconds = d.rehabByTypeSeconds?.[type] ?? 0
+                  const seconds =  0
                   const minutes = Math.round(seconds / 60)
 
                   return (
