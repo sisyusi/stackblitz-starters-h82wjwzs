@@ -283,9 +283,10 @@ const exportAllRecordsToCSV = () => {
 
 
 
-  useEffect(() => {
-    checkUser()
-  }, [])
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+useEffect(() => {
+  checkUser()
+}, [])
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
