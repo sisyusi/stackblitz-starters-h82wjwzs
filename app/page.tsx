@@ -2363,84 +2363,59 @@ const maxRehabTypeSeconds = Math.max(
     </div>
 
     {/* 상세 */}
-    {selectedStatsDay && (
-      <div className="rounded-2xl bg-slate-950 p-4 text-sm shadow-xl">
-        <div className="mb-2 flex items-center justify-between">
-          <div className="font-bold text-slate-200">
-            {selectedStatsDay.label} 상세
-          </div>
+{selectedStatsDay && (
+  <div className="rounded-2xl bg-slate-950 p-4 text-sm shadow-xl">
+    <div className="mb-2 flex items-center justify-between">
+      <div className="font-bold text-slate-200">
+        {selectedStatsDay.label} 상세
+      </div>
 
-          <button
-            onClick={() => setSelectedStatsDay(null)}
-            className="text-xs text-slate-400"
-          >
-            닫기
-          </button>
-        </div>
+      <button
+        onClick={() => setSelectedStatsDay(null)}
+        className="text-xs text-slate-400"
+      >
+        닫기
+      </button>
+    </div>
 
-        <div className="grid grid-cols-2 gap-3 text-slate-300">
-          <div className="rounded-xl bg-slate-800 p-3">
-            <div className="text-xs text-slate-400">수유 횟수</div>
-            <div className="text-lg font-bold">
-              {selectedStatsDay.feedCount}회
-            </div>
-          </div>
-
-          <div className="rounded-xl bg-slate-800 p-3">
-            <div className="text-xs text-slate-400">총 수유량</div>
-            <div className="text-lg font-bold">
-              {selectedStatsDay.totalVolume}ml
-            </div>
-          </div>
-
-          <div className="rounded-xl bg-slate-800 p-3">
-            <div className="text-xs text-slate-400">평균 수유시간</div>
-            <div className="text-lg font-bold">
-              {formatElapsed( 0)}
-            </div>
-          </div>
-
-          <div className="rounded-xl bg-slate-800 p-3">
-            <div className="text-xs text-slate-400">총 사레</div>
-            <div className="text-lg font-bold">
-              {selectedStatsDay.totalChoking ?? 0}회
-            </div>
-          </div>
-
-          <div className="col-span-2 rounded-xl bg-slate-800 p-3">
-            <div className="text-xs text-slate-400">평균 사레시간</div>
-            <div className="text-lg font-bold">
-              {formatElapsed(selectedStatsDay.avgChokingSeconds ?? 0)}
-            </div>
-          </div>
-
-          <div className="col-span-2 rounded-xl bg-slate-800 p-3">
-            <div className="mb-2 text-xs text-slate-400">
-              재활종류별 시간
-            </div>
-
-            <div className="space-y-1">
-              {rehabTypes.map((type) => {
-                const seconds = selectedStatsDay.rehabByTypeSeconds?.[type] ?? 0
-
-                return (
-                  <div
-                    key={type}
-                    className="flex items-center justify-between text-sm"
-                  >
-                    <span>{displayRehabName(type)}</span>
-
-                    <span className="font-bold text-green-300">
-                      {formatElapsed(seconds)}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+    <div className="grid grid-cols-2 gap-3 text-slate-300">
+      <div className="rounded-xl bg-slate-800 p-3">
+        <div className="text-xs text-slate-400">수유 횟수</div>
+        <div className="text-lg font-bold">
+          {selectedStatsDay.feedCount}회
         </div>
       </div>
-    )}
+
+      <div className="rounded-xl bg-slate-800 p-3">
+        <div className="text-xs text-slate-400">총 수유량</div>
+        <div className="text-lg font-bold">
+          {selectedStatsDay.totalVolume}ml
+        </div>
+      </div>
+
+      <div className="rounded-xl bg-slate-800 p-3">
+        <div className="text-xs text-slate-400">총 사레</div>
+        <div className="text-lg font-bold">
+          {selectedStatsDay.totalChoking}회
+        </div>
+      </div>
+
+      <div className="rounded-xl bg-slate-800 p-3">
+        <div className="text-xs text-slate-400">수유당 사레</div>
+        <div className="text-lg font-bold">
+          {selectedStatsDay.chokingPerFeed.toFixed(1)}회
+        </div>
+      </div>
+
+      <div className="col-span-2 rounded-xl bg-slate-800 p-3">
+        <div className="text-xs text-slate-400">재활 전체 시간</div>
+        <div className="text-lg font-bold text-green-300">
+          {formatElapsed(selectedStatsDay.totalRehabSeconds)}
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
     {/* CSV */}
     <div className="mt-4 flex justify-center">
