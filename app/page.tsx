@@ -1296,11 +1296,8 @@ const lastRehabGap = lastRehab
   const yTicks = [1, 0.75, 0.5, 0.25, 0]
 
   const maxFeedVolume = Math.max(...recentStats.map((d) => d.totalVolume), 1)
-const maxFeedCount = Math.max(...recentStats.map((d) => d.feedCount), 1)
-const maxAvgFeedSeconds = Math.max(
-  ...recentStats.map((d) => d.avgFeedSeconds ?? 0),
-  1
-)
+
+
 
 const maxChokingCount = Math.max(
   ...recentStats.map((d) => d.totalChoking ?? 0),
@@ -2159,7 +2156,7 @@ const maxRehabTypeSeconds = Math.max(
               </div>
 
               <div className="text-[10px] text-green-300">
-                평균 {formatElapsed(d.avgFeedSeconds ?? 0)}
+                평균 {formatElapsed(0)}
               </div>
 
               <div
@@ -2399,7 +2396,7 @@ const maxRehabTypeSeconds = Math.max(
           <div className="rounded-xl bg-slate-800 p-3">
             <div className="text-xs text-slate-400">평균 수유시간</div>
             <div className="text-lg font-bold">
-              {formatElapsed(selectedStatsDay.avgFeedSeconds ?? 0)}
+              {formatElapsed( 0)}
             </div>
           </div>
 
